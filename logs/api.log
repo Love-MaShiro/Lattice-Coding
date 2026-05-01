@@ -1,0 +1,52 @@
+{"L":"WARN","T":"2026-05-01T19:55:53.234+0800","C":"api/main.go:28","M":"failed to initialize bootstrap, running without DB/Redis","error":"failed to connect to mysql: dial tcp 127.0.0.1:3306: connect: connection refused","S":"main.main\n\t/home/ubuntu/Lattice-Coding/cmd/api/main.go:28\nruntime.main\n\t/usr/lib/go-1.22/src/runtime/proc.go:271"}
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /health                   --> main.main.func2 (6 handlers)
+[GIN-debug] GET    /api/v1/providers         --> lattice-coding/internal/modules/provider.listProviders (6 handlers)
+[GIN-debug] GET    /api/v1/providers/:id     --> lattice-coding/internal/modules/provider.getProvider (6 handlers)
+[GIN-debug] POST   /api/v1/providers         --> lattice-coding/internal/modules/provider.createProvider (6 handlers)
+[GIN-debug] PUT    /api/v1/providers/:id     --> lattice-coding/internal/modules/provider.updateProvider (6 handlers)
+[GIN-debug] DELETE /api/v1/providers/:id     --> lattice-coding/internal/modules/provider.deleteProvider (6 handlers)
+[GIN-debug] POST   /api/v1/providers/:id/test --> lattice-coding/internal/modules/provider.testProvider (6 handlers)
+[GIN-debug] GET    /api/v1/agents            --> lattice-coding/internal/modules/agent.listAgents (6 handlers)
+[GIN-debug] GET    /api/v1/agents/:id        --> lattice-coding/internal/modules/agent.getAgent (6 handlers)
+[GIN-debug] POST   /api/v1/agents            --> lattice-coding/internal/modules/agent.createAgent (6 handlers)
+[GIN-debug] PUT    /api/v1/agents/:id        --> lattice-coding/internal/modules/agent.updateAgent (6 handlers)
+[GIN-debug] DELETE /api/v1/agents/:id        --> lattice-coding/internal/modules/agent.deleteAgent (6 handlers)
+[GIN-debug] POST   /api/v1/agents/:id/run    --> lattice-coding/internal/modules/agent.runAgent (6 handlers)
+[GIN-debug] POST   /api/v1/chat/completions  --> lattice-coding/internal/modules/chat.createChatCompletion (6 handlers)
+[GIN-debug] POST   /api/v1/chat/stream       --> lattice-coding/internal/modules/chat.createChatStream (6 handlers)
+[GIN-debug] GET    /api/v1/chat/messages/:conversation_id --> lattice-coding/internal/modules/chat.getMessages (6 handlers)
+[GIN-debug] POST   /api/v1/chat/messages     --> lattice-coding/internal/modules/chat.createMessage (6 handlers)
+[GIN-debug] GET    /api/v1/tools             --> lattice-coding/internal/modules/mcp.listTools (6 handlers)
+[GIN-debug] GET    /api/v1/tools/:id         --> lattice-coding/internal/modules/mcp.getTool (6 handlers)
+[GIN-debug] POST   /api/v1/tools/:id/execute --> lattice-coding/internal/modules/mcp.executeTool (6 handlers)
+[GIN-debug] GET    /api/v1/workflows         --> lattice-coding/internal/modules/workflow.listWorkflows (6 handlers)
+[GIN-debug] GET    /api/v1/workflows/:id     --> lattice-coding/internal/modules/workflow.getWorkflow (6 handlers)
+[GIN-debug] POST   /api/v1/workflows         --> lattice-coding/internal/modules/workflow.createWorkflow (6 handlers)
+[GIN-debug] PUT    /api/v1/workflows/:id     --> lattice-coding/internal/modules/workflow.updateWorkflow (6 handlers)
+[GIN-debug] DELETE /api/v1/workflows/:id     --> lattice-coding/internal/modules/workflow.deleteWorkflow (6 handlers)
+[GIN-debug] POST   /api/v1/workflows/:id/start --> lattice-coding/internal/modules/workflow.startWorkflow (6 handlers)
+[GIN-debug] GET    /api/v1/knowledge/documents --> lattice-coding/internal/modules/knowledge.listDocuments (6 handlers)
+[GIN-debug] GET    /api/v1/knowledge/documents/:id --> lattice-coding/internal/modules/knowledge.getDocument (6 handlers)
+[GIN-debug] POST   /api/v1/knowledge/documents --> lattice-coding/internal/modules/knowledge.createDocument (6 handlers)
+[GIN-debug] PUT    /api/v1/knowledge/documents/:id --> lattice-coding/internal/modules/knowledge.updateDocument (6 handlers)
+[GIN-debug] DELETE /api/v1/knowledge/documents/:id --> lattice-coding/internal/modules/knowledge.deleteDocument (6 handlers)
+[GIN-debug] POST   /api/v1/knowledge/search  --> lattice-coding/internal/modules/knowledge.searchDocuments (6 handlers)
+[GIN-debug] POST   /api/v1/safety/check/path --> lattice-coding/internal/modules/safety.checkPath (6 handlers)
+[GIN-debug] POST   /api/v1/safety/check/command --> lattice-coding/internal/modules/safety.checkCommand (6 handlers)
+[GIN-debug] POST   /api/v1/safety/check/permission --> lattice-coding/internal/modules/safety.checkPermission (6 handlers)
+[GIN-debug] GET    /api/v1/audit/logs        --> lattice-coding/internal/modules/audit.listLogs (6 handlers)
+[GIN-debug] GET    /api/v1/audit/logs/:id    --> lattice-coding/internal/modules/audit.getLog (6 handlers)
+[GIN-debug] GET    /api/v1/audit/llm-calls   --> lattice-coding/internal/modules/audit.listLLMCalls (6 handlers)
+[GIN-debug] GET    /api/v1/audit/tool-calls  --> lattice-coding/internal/modules/audit.listToolCalls (6 handlers)
+{"L":"INFO","T":"2026-05-01T19:55:53.235+0800","C":"api/main.go:63","M":"API server starting","port":"8080"}
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8080
+{"L":"INFO","T":"2026-05-01T19:55:55.247+0800","C":"middleware/middleware.go:24","M":"/health","status":200,"method":"GET","path":"/health","query":"","ip":"::1","user-agent":"curl/8.5.0","cost":"44.695µs","length":67}
+{"L":"INFO","T":"2026-05-01T19:56:07.354+0800","C":"middleware/middleware.go:24","M":"/api/health","status":404,"method":"GET","path":"/api/health","query":"","ip":"127.0.0.1","user-agent":"curl/8.5.0","cost":"27.111µs","length":-1}
+{"L":"INFO","T":"2026-05-01T23:26:41.633+0800","C":"middleware/middleware.go:24","M":"/api/health","status":404,"method":"GET","path":"/api/health","query":"","ip":"127.0.0.1","user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0","cost":"28.194µs","length":-1}
+{"L":"INFO","T":"2026-05-01T23:28:48.999+0800","C":"middleware/middleware.go:24","M":"/api/health","status":404,"method":"GET","path":"/api/health","query":"","ip":"127.0.0.1","user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0","cost":"25.328µs","length":-1}

@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lattice-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lattice-api
+  template:
+    metadata:
+      labels:
+        app: lattice-api
+    spec:
+      containers:
+      - name: api
+        image: lattice-coding:latest
+        command: ["./cmd/api/main.go"]
+        ports:
+        - containerPort: 8080
+        env:
+        - name: MYSQL_HOST
+          value: mysql
+        - name: REDIS_HOST
+          value: redis
+        - name: POSTGRES_HOST
+          value: postgres
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lattice-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lattice-worker
+  template:
+    metadata:
+      labels:
+        app: lattice-worker
+    spec:
+      containers:
+      - name: worker
+        image: lattice-coding:latest
+        command: ["./cmd/worker/main.go"]
+        env:
+        - name: MYSQL_HOST
+          value: mysql
+        - name: REDIS_HOST
+          value: redis
+        - name: POSTGRES_HOST
+          value: postgres

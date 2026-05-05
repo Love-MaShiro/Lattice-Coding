@@ -1,46 +1,88 @@
 package app
 
 import (
-	"gorm.io/gorm"
+	"errors"
 
 	"lattice-coding/internal/common/config"
-	"lattice-coding/internal/common/db"
-	"lattice-coding/internal/common/redis"
+	"lattice-coding/internal/common/logger"
+	"lattice-coding/internal/runtime/eino"
+	"lattice-coding/internal/runtime/event"
+	"lattice-coding/internal/runtime/tool"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type Bootstrap struct {
-	DB    *gorm.DB
-	Redis *redis.Client
+	Deps    *Dependencies
+	Modules *Modules
+	Engine  *gin.Engine
 }
 
-func NewBootstrap(cfg *config.Config) (*Bootstrap, error) {
-	db, err := db.NewMySQL(&cfg.MySQL)
+func NewHTTPBootstrap() (*Bootstrap, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	log := logger.NewLogger(cfg)
+
+	deps, err := NewDependencies(cfg, log)
 	if err != nil {
 		return nil, err
 	}
 
-	redisClient, err := redis.NewClient(&cfg.Redis)
-	if err != nil {
-		return nil, err
-	}
+	eino.Init(cfg)
+	tool.Init(cfg)
+	event.Init(cfg)
+
+	engine, api := NewRouter(deps)
+
+	modules := InitModules(deps)
+	modules.RegisterRoutes(api)
 
 	return &Bootstrap{
-		DB:    db,
-		Redis: redisClient,
+		Deps:    deps,
+		Modules: modules,
+		Engine:  engine,
+	}, nil
+}
+
+func NewWorkerBootstrap() (*Bootstrap, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	log := logger.NewLogger(cfg)
+
+	deps, err := NewDependencies(cfg, log)
+	if err != nil {
+		return nil, err
+	}
+
+	eino.Init(cfg)
+	tool.Init(cfg)
+	event.Init(cfg)
+
+	modules := InitModules(deps)
+
+	return &Bootstrap{
+		Deps:    deps,
+		Modules: modules,
 	}, nil
 }
 
 func (b *Bootstrap) Close() error {
-	if b.DB != nil {
-		sqlDB, err := b.DB.DB()
-		if err == nil {
-			sqlDB.Close()
-		}
+	if b == nil || b.Deps == nil {
+		return nil
+	}
+	return b.Deps.Close()
+}
+
+func (b *Bootstrap) RunHTTP() error {
+	if b == nil || b.Deps == nil || b.Engine == nil {
+		return errors.New("http bootstrap not initialized")
 	}
 
-	if b.Redis != nil {
-		b.Redis.Close()
-	}
-
-	return nil
+	b.Deps.Logger.Info("API server starting", zap.String("port", b.Deps.Config.App.Port))
+	return b.Engine.Run(":" + b.Deps.Config.App.Port)
 }

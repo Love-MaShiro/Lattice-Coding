@@ -43,6 +43,14 @@ llm:
   stream:
     max_concurrent: 8
     acquire_timeout: 3s
+  timeout:
+    sync_call: 60s
+    stream_idle: 120s
+    health_check: 10s
+  retry:
+    max_attempts: 2
+    initial_interval: 500ms
+    max_interval: 5s
   circuit_breaker:
     enabled: true
     window: 60s

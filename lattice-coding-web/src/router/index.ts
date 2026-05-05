@@ -10,17 +10,20 @@ const router = createRouter({
     {
       path: '/provider',
       name: 'Provider',
-      component: () => import('@/views/provider/ProviderList.vue')
+      component: () => import('@/views/provider/ProviderList.vue'),
+      meta: { title: '模型管理' }
     },
     {
       path: '/agent',
       name: 'Agent',
-      component: () => import('@/views/agent/AgentList.vue')
+      component: () => import('@/views/agent/AgentList.vue'),
+      meta: { title: 'Agent 管理' }
     },
     {
       path: '/chat',
       name: 'Chat',
-      component: () => import('@/views/chat/ChatPage.vue')
+      component: () => import('@/views/chat/ChatPage.vue'),
+      meta: { title: '对话' }
     }
   ]
 })

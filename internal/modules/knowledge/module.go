@@ -2,15 +2,15 @@ package knowledge
 
 import "github.com/gin-gonic/gin"
 
-func RegisterRoutes(r *gin.Engine) {
-	api := r.Group("/api/v1/knowledge")
+func RegisterRoutes(api *gin.RouterGroup) {
+	r := api.Group("/v1/knowledge")
 	{
-		api.GET("/documents", listDocuments)
-		api.GET("/documents/:id", getDocument)
-		api.POST("/documents", createDocument)
-		api.PUT("/documents/:id", updateDocument)
-		api.DELETE("/documents/:id", deleteDocument)
-		api.POST("/search", searchDocuments)
+		r.GET("/documents", listDocuments)
+		r.GET("/documents/:id", getDocument)
+		r.POST("/documents", createDocument)
+		r.PUT("/documents/:id", updateDocument)
+		r.DELETE("/documents/:id", deleteDocument)
+		r.POST("/search", searchDocuments)
 	}
 }
 

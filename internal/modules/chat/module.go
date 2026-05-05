@@ -2,13 +2,13 @@ package chat
 
 import "github.com/gin-gonic/gin"
 
-func RegisterRoutes(r *gin.Engine) {
-	api := r.Group("/api/v1/chat")
+func RegisterRoutes(api *gin.RouterGroup) {
+	r := api.Group("/v1/chat")
 	{
-		api.POST("/completions", createChatCompletion)
-		api.POST("/stream", createChatStream)
-		api.GET("/messages/:conversation_id", getMessages)
-		api.POST("/messages", createMessage)
+		r.POST("/completions", createChatCompletion)
+		r.POST("/stream", createChatStream)
+		r.GET("/messages/:conversation_id", getMessages)
+		r.POST("/messages", createMessage)
 	}
 }
 

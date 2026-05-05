@@ -2,15 +2,15 @@ package agent
 
 import "github.com/gin-gonic/gin"
 
-func RegisterRoutes(r *gin.Engine) {
-	api := r.Group("/api/v1/agents")
+func RegisterRoutes(api *gin.RouterGroup) {
+	r := api.Group("/v1/agents")
 	{
-		api.GET("", listAgents)
-		api.GET("/:id", getAgent)
-		api.POST("", createAgent)
-		api.PUT("/:id", updateAgent)
-		api.DELETE("/:id", deleteAgent)
-		api.POST("/:id/run", runAgent)
+		r.GET("", listAgents)
+		r.GET("/:id", getAgent)
+		r.POST("", createAgent)
+		r.PUT("/:id", updateAgent)
+		r.DELETE("/:id", deleteAgent)
+		r.POST("/:id/run", runAgent)
 	}
 }
 

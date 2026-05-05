@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,7 +23,7 @@ func Logger(log *logger.Logger) gin.HandlerFunc {
 		c.Next()
 
 		cost := time.Since(start)
-		log.Info(path,
+		log.WithCtx(c.Request.Context()).Info(path,
 			zap.Int("status", c.Writer.Status()),
 			zap.String("method", c.Request.Method),
 			zap.String("path", path),
@@ -38,7 +40,7 @@ func Recovery(log *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Error("panic recovered",
+				log.WithCtx(c.Request.Context()).Error("panic recovered",
 					zap.Any("error", err),
 					zap.String("path", c.Request.URL.Path),
 					zap.String("method", c.Request.Method),
@@ -90,10 +92,33 @@ func handleError(c *gin.Context, err error) {
 }
 
 func CORS() gin.HandlerFunc {
+	allowOrigins := getEnvOrDefault("CORS_ALLOW_ORIGINS", "*")
+	allowMethods := getEnvOrDefault("CORS_ALLOW_METHODS", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+	allowHeaders := getEnvOrDefault("CORS_ALLOW_HEADERS", "Content-Type, Authorization, X-Trace-ID, X-Run-ID, X-Session-ID, X-Request-ID")
+	exposeHeaders := getEnvOrDefault("CORS_EXPOSE_HEADERS", "X-Trace-ID, X-Run-ID, X-Session-ID")
+	allowCredentials := getEnvOrDefault("CORS_ALLOW_CREDENTIALS", "true")
+	maxAge := getEnvOrDefault("CORS_MAX_AGE", "86400")
+
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Trace-ID")
+		origin := c.GetHeader("Origin")
+
+		if origin != "" && allowOrigins != "*" {
+			if strings.Contains(allowOrigins, origin) {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			} else if strings.Contains(allowOrigins, "http://localhost") || strings.Contains(allowOrigins, "http://127.0.0.1") {
+				if strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
+					c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+				}
+			}
+		} else {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
+		c.Writer.Header().Set("Access-Control-Allow-Methods", allowMethods)
+		c.Writer.Header().Set("Access-Control-Allow-Headers", allowHeaders)
+		c.Writer.Header().Set("Access-Control-Expose-Headers", exposeHeaders)
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", allowCredentials)
+		c.Writer.Header().Set("Access-Control-Max-Age", maxAge)
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
@@ -119,12 +144,59 @@ func Trace() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		traceID := c.GetHeader("X-Trace-ID")
 		if traceID == "" {
-			traceID = "trace-" + time.Now().Format("20060102150405") + "-" + randomString(8)
+			traceID = generateTraceID()
 		}
+
+		runID := c.GetHeader("X-Run-ID")
+		sessionID := c.GetHeader("X-Session-ID")
+
+		logCtx := &logger.LogContext{
+			TraceID:   traceID,
+			RunID:     runID,
+			SessionID: sessionID,
+		}
+		ctx := logger.NewContext(c.Request.Context(), logCtx)
+		c.Request = c.Request.WithContext(ctx)
+
 		c.Set("traceID", traceID)
+		c.Set("runID", runID)
+		c.Set("sessionID", sessionID)
 		c.Writer.Header().Set("X-Trace-ID", traceID)
+
+		if runID != "" {
+			c.Writer.Header().Set("X-Run-ID", runID)
+		}
+		if sessionID != "" {
+			c.Writer.Header().Set("X-Session-ID", sessionID)
+		}
+
 		c.Next()
 	}
+}
+
+func GetTraceID(c *gin.Context) string {
+	if v, exists := c.Get("traceID"); exists {
+		return v.(string)
+	}
+	return ""
+}
+
+func GetRunID(c *gin.Context) string {
+	if v, exists := c.Get("runID"); exists {
+		return v.(string)
+	}
+	return ""
+}
+
+func GetSessionID(c *gin.Context) string {
+	if v, exists := c.Get("sessionID"); exists {
+		return v.(string)
+	}
+	return ""
+}
+
+func generateTraceID() string {
+	return "trace-" + time.Now().Format("20060102150405") + "-" + randomString(8)
 }
 
 func randomString(n int) string {
@@ -134,4 +206,11 @@ func randomString(n int) string {
 		result[i] = letters[int(time.Now().UnixNano())%len(letters)]
 	}
 	return string(result)
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return defaultValue
 }

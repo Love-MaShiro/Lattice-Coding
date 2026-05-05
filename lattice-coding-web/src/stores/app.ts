@@ -3,15 +3,15 @@ import { ref } from 'vue'
 
 export const useAppStore = defineStore('app', () => {
   const collapsed = ref(false)
-  const title = ref('Lattice Coding')
+  const title = ref('控制台')
 
-  const toggleSidebar = () => {
+  const toggleCollapse = () => {
     collapsed.value = !collapsed.value
   }
 
   return {
     collapsed,
     title,
-    toggleSidebar
+    toggleCollapse
   }
 })

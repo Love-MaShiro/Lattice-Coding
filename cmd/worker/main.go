@@ -1,22 +1,21 @@
 package main
 
 import (
-	"lattice-coding/internal/common/config"
-	"lattice-coding/internal/common/logger"
+	"log"
+
+	"lattice-coding/internal/app"
 	"lattice-coding/internal/modules/run"
-	"lattice-coding/internal/runtime/eino"
-	"lattice-coding/internal/runtime/event"
 )
 
 func main() {
-	cfg := config.LoadConfig()
-	log := logger.NewLogger(cfg)
+	bootstrap, err := app.NewWorkerBootstrap()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() { _ = bootstrap.Close() }()
 
-	eino.Init(cfg)
-	event.Init(cfg)
+	run.StartWorker(bootstrap.Deps.Config, bootstrap.Deps.Logger)
 
-	run.StartWorker(cfg, log)
-
-	log.Info("Worker started successfully")
+	bootstrap.Deps.Logger.Info("Worker started successfully")
 	select {}
 }

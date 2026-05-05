@@ -2,12 +2,12 @@ package safety
 
 import "github.com/gin-gonic/gin"
 
-func RegisterRoutes(r *gin.Engine) {
-	api := r.Group("/api/v1/safety")
+func RegisterRoutes(api *gin.RouterGroup) {
+	r := api.Group("/v1/safety")
 	{
-		api.POST("/check/path", checkPath)
-		api.POST("/check/command", checkCommand)
-		api.POST("/check/permission", checkPermission)
+		r.POST("/check/path", checkPath)
+		r.POST("/check/command", checkCommand)
+		r.POST("/check/permission", checkPermission)
 	}
 }
 

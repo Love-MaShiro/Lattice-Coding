@@ -2,13 +2,13 @@ package audit
 
 import "github.com/gin-gonic/gin"
 
-func RegisterRoutes(r *gin.Engine) {
-	api := r.Group("/api/v1/audit")
+func RegisterRoutes(api *gin.RouterGroup) {
+	r := api.Group("/v1/audit")
 	{
-		api.GET("/logs", listLogs)
-		api.GET("/logs/:id", getLog)
-		api.GET("/llm-calls", listLLMCalls)
-		api.GET("/tool-calls", listToolCalls)
+		r.GET("/logs", listLogs)
+		r.GET("/logs/:id", getLog)
+		r.GET("/llm-calls", listLLMCalls)
+		r.GET("/tool-calls", listToolCalls)
 	}
 }
 

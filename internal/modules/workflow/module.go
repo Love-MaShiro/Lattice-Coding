@@ -2,15 +2,15 @@ package workflow
 
 import "github.com/gin-gonic/gin"
 
-func RegisterRoutes(r *gin.Engine) {
-	api := r.Group("/api/v1/workflows")
+func RegisterRoutes(api *gin.RouterGroup) {
+	r := api.Group("/v1/workflows")
 	{
-		api.GET("", listWorkflows)
-		api.GET("/:id", getWorkflow)
-		api.POST("", createWorkflow)
-		api.PUT("/:id", updateWorkflow)
-		api.DELETE("/:id", deleteWorkflow)
-		api.POST("/:id/start", startWorkflow)
+		r.GET("", listWorkflows)
+		r.GET("/:id", getWorkflow)
+		r.POST("", createWorkflow)
+		r.PUT("/:id", updateWorkflow)
+		r.DELETE("/:id", deleteWorkflow)
+		r.POST("/:id/start", startWorkflow)
 	}
 }
 

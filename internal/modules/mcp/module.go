@@ -2,12 +2,12 @@ package mcp
 
 import "github.com/gin-gonic/gin"
 
-func RegisterRoutes(r *gin.Engine) {
-	api := r.Group("/api/v1/tools")
+func RegisterRoutes(api *gin.RouterGroup) {
+	r := api.Group("/v1/tools")
 	{
-		api.GET("", listTools)
-		api.GET("/:id", getTool)
-		api.POST("/:id/execute", executeTool)
+		r.GET("", listTools)
+		r.GET("/:id", getTool)
+		r.POST("/:id/execute", executeTool)
 	}
 }
 

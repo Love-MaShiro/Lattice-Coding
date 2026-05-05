@@ -98,7 +98,7 @@ wait_for_backend() {
     log_info "等待后端健康检查通过..."
     
     for i in $(seq 1 $MAX_RETRIES); do
-        if curl -s "http://localhost:$BACKEND_PORT/health" | grep -q "success"; then
+        if curl -s "http://localhost:$BACKEND_PORT/api/health" | grep -q "success"; then
             log_info "后端健康检查通过"
             return 0
         fi

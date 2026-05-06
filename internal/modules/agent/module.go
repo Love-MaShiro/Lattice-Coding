@@ -1,27 +1,48 @@
 package agent
 
-import "github.com/gin-gonic/gin"
+import (
+	"lattice-coding/internal/modules/agent/api"
+	"lattice-coding/internal/modules/agent/application"
+	"lattice-coding/internal/modules/agent/domain"
+	"lattice-coding/internal/modules/agent/infra/persistence"
 
-func RegisterRoutes(api *gin.RouterGroup) {
-	r := api.Group("/v1/agents")
-	{
-		r.GET("", listAgents)
-		r.GET("/:id", getAgent)
-		r.POST("", createAgent)
-		r.PUT("/:id", updateAgent)
-		r.DELETE("/:id", deleteAgent)
-		r.POST("/:id/run", runAgent)
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+type ModuleProvider struct {
+	DB *gorm.DB
+}
+
+type Module struct {
+	AgentRepo      domain.AgentRepository
+	CommandService *application.CommandService
+	QueryService   *application.QueryService
+	Handler        *api.Handler
+}
+
+func NewModule(p *ModuleProvider) *Module {
+	_ = persistence.Migrate(p.DB)
+
+	agentRepo := persistence.NewAgentRepositoryImpl(p.DB)
+	providerGetter := persistence.NewProviderGetter(p.DB)
+
+	cmdSvc := application.NewCommandService(agentRepo, providerGetter)
+	querySvc := application.NewQueryService(agentRepo)
+	handler := api.NewHandler(cmdSvc, querySvc)
+
+	return &Module{
+		AgentRepo:      agentRepo,
+		CommandService: cmdSvc,
+		QueryService:   querySvc,
+		Handler:        handler,
 	}
 }
 
-func listAgents(c *gin.Context) {}
+func RegisterRoutes(group *gin.RouterGroup, m *Module) {
+	api.RegisterRoutes(group, m.Handler)
+}
 
-func getAgent(c *gin.Context) {}
-
-func createAgent(c *gin.Context) {}
-
-func updateAgent(c *gin.Context) {}
-
-func deleteAgent(c *gin.Context) {}
-
-func runAgent(c *gin.Context) {}
+func NewAgentRefCounter(db *gorm.DB) domain.AgentReferenceChecker {
+	return persistence.NewAgentRefCounter(db)
+}

@@ -15,7 +15,7 @@ import (
 type ModuleProvider struct {
 	DB           *gorm.DB
 	Encryptor    crypto.Encryptor
-	AgentChecker application.AgentReferenceChecker
+	AgentChecker domain.AgentReferenceChecker
 }
 
 type Module struct {

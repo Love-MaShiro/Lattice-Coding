@@ -29,3 +29,12 @@ type ProviderHealthRepository interface {
 	FindLatestByProviderID(ctx context.Context, providerID uint64) (*ProviderHealth, error)
 	FindLatestByModelConfigID(ctx context.Context, modelConfigID uint64) (*ProviderHealth, error)
 }
+
+type AgentReferenceChecker interface {
+	HasModelConfigReferences(ctx context.Context, modelConfigID uint64) (bool, error)
+}
+
+type ModelConfigGetter interface {
+	GetModelConfig(ctx context.Context, id uint64) (*ModelConfig, error)
+	GetProvider(ctx context.Context, id uint64) (*Provider, error)
+}

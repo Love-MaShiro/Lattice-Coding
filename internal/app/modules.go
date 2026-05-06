@@ -17,22 +17,29 @@ import (
 
 type Modules struct {
 	ProviderModule *provider.Module
+	AgentModule    *agent.Module
 }
 
 func InitModules(d *Dependencies) *Modules {
+	agentModule := agent.NewModule(&agent.ModuleProvider{
+		DB: d.MySQL,
+	})
+
 	providerModule := provider.NewModule(&provider.ModuleProvider{
 		DB:           d.MySQL,
 		Encryptor:    crypto.NewNoopEncryptor(),
-		AgentChecker: nil,
+		AgentChecker: agent.NewAgentRefCounter(d.MySQL),
 	})
 
 	return &Modules{
 		ProviderModule: providerModule,
+		AgentModule:    agentModule,
 	}
 }
 
 func (m *Modules) RegisterRoutes(api *gin.RouterGroup) {
-	agent.RegisterRoutes(api)
+	provider.RegisterRoutes(api, m.ProviderModule)
+	agent.RegisterRoutes(api, m.AgentModule)
 	chat.RegisterRoutes(api)
 	run.RegisterRoutes(api)
 	mcp.RegisterRoutes(api)

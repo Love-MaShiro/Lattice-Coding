@@ -5,7 +5,7 @@ import (
 )
 
 func RegisterRoutes(api *gin.RouterGroup, h *Handler) {
-	providers := api.Group("/providers")
+	providers := api.Group("/v1/providers")
 	{
 		providers.POST("", h.CreateProvider)
 		providers.GET("", h.ListProviders)
@@ -20,7 +20,7 @@ func RegisterRoutes(api *gin.RouterGroup, h *Handler) {
 		providers.GET("/:id/health", h.GetProviderHealth)
 	}
 
-	modelConfigs := api.Group("/model-configs")
+	modelConfigs := api.Group("/v1/model-configs")
 	{
 		modelConfigs.POST("", h.CreateModelConfig)
 		modelConfigs.GET("", h.ListModelConfigs)

@@ -2,27 +2,24 @@ package application
 
 import (
 	"context"
+
 	"lattice-coding/internal/common/crypto"
 	"lattice-coding/internal/common/errors"
 	"lattice-coding/internal/modules/provider/domain"
 )
 
-type AgentReferenceChecker interface {
-	HasModelConfigReferences(ctx context.Context, modelConfigID uint64) (bool, error)
-}
-
 type CommandService struct {
-	providerRepo      domain.ProviderRepository
-	modelConfigRepo   domain.ModelConfigRepository
-	encryptor         crypto.Encryptor
-	agentRefChecker   AgentReferenceChecker
+	providerRepo    domain.ProviderRepository
+	modelConfigRepo domain.ModelConfigRepository
+	encryptor      crypto.Encryptor
+	agentRefChecker domain.AgentReferenceChecker
 }
 
 func NewCommandService(
 	providerRepo domain.ProviderRepository,
 	modelConfigRepo domain.ModelConfigRepository,
 	encryptor crypto.Encryptor,
-	agentRefChecker AgentReferenceChecker,
+	agentRefChecker domain.AgentReferenceChecker,
 ) *CommandService {
 	return &CommandService{
 		providerRepo:    providerRepo,

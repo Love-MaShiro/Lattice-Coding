@@ -53,11 +53,11 @@ export interface PageResult {
   size: number
 }
 
-export type LoadDataFn = (page: number, size: number) => Promise<PageResult>
+export type LoadDataFn<TData> = (page: number, size: number) => Promise<PageResult<TData>>
 
 const props = withDefaults(defineProps<{
   columns: TableColumn[]
-  api: LoadDataFn
+    api: LoadDataFn<T>
   showPagination?: boolean
 }>(), {
   showPagination: true

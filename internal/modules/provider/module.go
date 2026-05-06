@@ -1,8 +1,10 @@
 package provider
 
 import (
+	"lattice-coding/internal/common/crypto"
 	"lattice-coding/internal/modules/provider/api"
 	"lattice-coding/internal/modules/provider/application"
+	"lattice-coding/internal/modules/provider/domain"
 	"lattice-coding/internal/modules/provider/infra/persistence"
 	"lattice-coding/internal/runtime/llm"
 
@@ -10,55 +12,88 @@ import (
 	"gorm.io/gorm"
 )
 
-// ModuleProvider 模块依赖
 type ModuleProvider struct {
-	DB *gorm.DB
+	DB           *gorm.DB
+	Encryptor    crypto.Encryptor
+	AgentChecker application.AgentReferenceChecker
 }
 
-// Module 模块
 type Module struct {
-	ProviderHandler *api.ProviderHandler
-	LLMFactory      *llm.LLMFactory
+	ProviderRepo       domain.ProviderRepository
+	ModelConfigRepo    domain.ModelConfigRepository
+	ProviderHealthRepo domain.ProviderHealthRepository
+	CommandService     *application.CommandService
+	QueryService       *application.QueryService
+	HealthService      *application.HealthService
+	HealthCheckService *application.HealthCheckService
+	SyncService        *application.SyncService
+	LLMFactory         *llm.LLMFactory
+	Handler            *api.Handler
 }
 
-// NewModule 创建模块
 func NewModule(p *ModuleProvider) *Module {
-	// 自动迁移表结构
 	_ = persistence.Migrate(p.DB)
+
+	encryptor := p.Encryptor
+	if encryptor == nil {
+		encryptor = crypto.NewNoopEncryptor()
+	}
 
 	providerRepo := persistence.NewProviderRepositoryImpl(p.DB)
 	modelConfigRepo := persistence.NewModelConfigRepositoryImpl(p.DB)
-	cryptoService := persistence.NewCryptoService()
-	providerService := application.NewProviderService(providerRepo, modelConfigRepo, cryptoService)
-	llmFactory := llm.NewLLMFactory(providerRepo, modelConfigRepo, cryptoService)
-	providerHandler := api.NewProviderHandler(providerService, llmFactory)
+	healthRepo := persistence.NewProviderHealthRepositoryImpl(p.DB)
+
+	llmFactory := llm.NewLLMFactory(providerRepo, healthRepo, modelConfigRepo)
+	modelLister := llm.NewModelLister()
+
+	cmdSvc := application.NewCommandService(
+		providerRepo,
+		modelConfigRepo,
+		encryptor,
+		p.AgentChecker,
+	)
+	querySvc := application.NewQueryService(
+		providerRepo,
+		modelConfigRepo,
+	)
+	healthSvc := application.NewHealthService(
+		providerRepo,
+		modelConfigRepo,
+		healthRepo,
+		llmFactory,
+	)
+	healthCheckSvc := application.NewHealthCheckService(
+		providerRepo,
+		modelConfigRepo,
+		healthRepo,
+		llmFactory,
+	)
+	syncSvc := application.NewSyncService(
+		providerRepo,
+		modelConfigRepo,
+		modelLister,
+	)
+	handler := api.NewHandler(
+		cmdSvc,
+		querySvc,
+		healthSvc,
+		healthCheckSvc,
+		syncSvc,
+	)
 
 	return &Module{
-		ProviderHandler: providerHandler,
-		LLMFactory:      llmFactory,
+		ProviderRepo:       providerRepo,
+		ModelConfigRepo:    modelConfigRepo,
+		ProviderHealthRepo: healthRepo,
+		CommandService:     cmdSvc,
+		QueryService:       querySvc,
+		HealthService:      healthSvc,
+		HealthCheckService: healthCheckSvc,
+		SyncService:        syncSvc,
+		Handler:            handler,
 	}
 }
 
-// RegisterRoutes 注册路由
-func (m *Module) RegisterRoutes(api *gin.RouterGroup) {
-	// Providers
-	r := api.Group("/v1/providers")
-	{
-		r.GET("", m.ProviderHandler.ListProviders)
-		r.GET("/:id", m.ProviderHandler.GetProvider)
-		r.POST("", m.ProviderHandler.CreateProvider)
-		r.PUT("/:id", m.ProviderHandler.UpdateProvider)
-		r.DELETE("/:id", m.ProviderHandler.DeleteProvider)
-		r.POST("/:id/enable", m.ProviderHandler.EnableProvider)
-		r.POST("/:id/disable", m.ProviderHandler.DisableProvider)
-		r.POST("/:id/test", m.ProviderHandler.TestProvider)
-	}
-
-	// Model Configs
-	mc := api.Group("/v1/model-configs")
-	{
-		mc.GET("", m.ProviderHandler.ListModelConfigs)
-		mc.POST("", m.ProviderHandler.CreateModelConfig)
-		mc.POST("/:id/test", m.ProviderHandler.TestModelConfig)
-	}
+func RegisterRoutes(group *gin.RouterGroup, m *Module) {
+	api.RegisterRoutes(group, m.Handler)
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"lattice-coding/internal/common/crypto"
 	"lattice-coding/internal/modules/agent"
 	"lattice-coding/internal/modules/audit"
 	"lattice-coding/internal/modules/chat"
@@ -20,7 +21,9 @@ type Modules struct {
 
 func InitModules(d *Dependencies) *Modules {
 	providerModule := provider.NewModule(&provider.ModuleProvider{
-		DB: d.MySQL,
+		DB:           d.MySQL,
+		Encryptor:    crypto.NewNoopEncryptor(),
+		AgentChecker: nil,
 	})
 
 	return &Modules{
@@ -29,7 +32,6 @@ func InitModules(d *Dependencies) *Modules {
 }
 
 func (m *Modules) RegisterRoutes(api *gin.RouterGroup) {
-	m.ProviderModule.RegisterRoutes(api)
 	agent.RegisterRoutes(api)
 	chat.RegisterRoutes(api)
 	run.RegisterRoutes(api)

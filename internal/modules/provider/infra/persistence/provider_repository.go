@@ -1,52 +1,66 @@
 package persistence
 
 import (
+	"context"
+	"time"
+
 	"lattice-coding/internal/common/db"
 	"lattice-coding/internal/modules/provider/domain"
 
 	"gorm.io/gorm"
 )
 
-// ProviderPO Provider 持久化对象
 type ProviderPO struct {
 	db.BasePO
-	Name             string `gorm:"column:name;type:varchar(100);not null;index"`
-	ProviderType     string `gorm:"column:provider_type;type:varchar(50);not null;index"`
-	BaseURL          string `gorm:"column:base_url;type:varchar(255)"`
-	APIKeyCiphertext string `gorm:"column:api_key_ciphertext;type:text"`
-	IsEnabled        bool   `gorm:"column:is_enabled;default:true"`
+	Name                 string     `gorm:"column:name;type:varchar(100);not null;index"`
+	ProviderType         string     `gorm:"column:provider_type;type:varchar(50);not null;index"`
+	BaseURL              string     `gorm:"column:base_url;type:varchar(255)"`
+	AuthType             string     `gorm:"column:auth_type;type:varchar(50);not null;default:'api_key'"`
+	APIKeyCiphertext     string     `gorm:"column:api_key_ciphertext;type:text"`
+	AuthConfigCiphertext string     `gorm:"column:auth_config_ciphertext;type:text"`
+	Config               string     `gorm:"column:config;type:text"`
+	Enabled              bool       `gorm:"column:enabled;default:true"`
+	HealthStatus         string     `gorm:"column:health_status;type:varchar(20);not null;default:'unknown'"`
+	LastCheckedAt        *time.Time `gorm:"column:last_checked_at"`
+	LastError            string     `gorm:"column:last_error;type:text"`
 }
 
-// TableName 返回表名
 func (ProviderPO) TableName() string {
 	return "providers"
 }
 
-// ToDomain 转换为 Domain 实体
-func (po *ProviderPO) ToDomain() *domain.Provider {
-	return &domain.Provider{
-		ID:               po.ID,
-		Name:             po.Name,
-		ProviderType:     domain.ProviderType(po.ProviderType),
-		BaseURL:          po.BaseURL,
-		APIKeyCiphertext: po.APIKeyCiphertext,
-		IsEnabled:        po.IsEnabled,
-		CreatedAt:        po.CreatedAt,
-		UpdatedAt:        po.UpdatedAt,
-	}
+type ModelConfigPO struct {
+	db.BasePO
+	ProviderID   uint64 `gorm:"column:provider_id;not null;index"`
+	Name         string `gorm:"column:name;type:varchar(100);not null"`
+	Model        string `gorm:"column:model;type:varchar(100);not null"`
+	ModelType    string `gorm:"column:model_type;type:varchar(50);not null;default:'chat'"`
+	Params       string `gorm:"column:params;type:text"`
+	Capabilities string `gorm:"column:capabilities;type:text"`
+	IsDefault    bool   `gorm:"column:is_default;default:false"`
+	Enabled      bool   `gorm:"column:enabled;default:true"`
 }
 
-// FromDomain 从 Domain 实体转换
-func (po *ProviderPO) FromDomain(d *domain.Provider) {
-	po.ID = d.ID
-	po.Name = d.Name
-	po.ProviderType = string(d.ProviderType)
-	po.BaseURL = d.BaseURL
-	po.APIKeyCiphertext = d.APIKeyCiphertext
-	po.IsEnabled = d.IsEnabled
+func (ModelConfigPO) TableName() string {
+	return "model_configs"
 }
 
-// ProviderRepositoryImpl provider 仓库实现
+type ProviderHealthPO struct {
+	ID            uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	ProviderID    uint64    `gorm:"column:provider_id;not null;index"`
+	ModelConfigID uint64    `gorm:"column:model_config_id;not null;index"`
+	Status        string    `gorm:"column:status;type:varchar(20);not null;default:'unknown'"`
+	LatencyMs     int64     `gorm:"column:latency_ms;default:0"`
+	ErrorCode     string    `gorm:"column:error_code;type:varchar(50)"`
+	ErrorMessage  string    `gorm:"column:error_message;type:text"`
+	CheckedAt     time.Time `gorm:"column:checked_at;not null"`
+	CreatedAt     time.Time `gorm:"column:created_at;not null;autoCreateTime"`
+}
+
+func (ProviderHealthPO) TableName() string {
+	return "provider_healths"
+}
+
 type ProviderRepositoryImpl struct {
 	db *gorm.DB
 }
@@ -55,91 +69,76 @@ func NewProviderRepositoryImpl(db *gorm.DB) domain.ProviderRepository {
 	return &ProviderRepositoryImpl{db: db}
 }
 
-func (r *ProviderRepositoryImpl) Create(provider *domain.Provider) error {
+func (r *ProviderRepositoryImpl) Create(ctx context.Context, provider *domain.Provider) error {
 	po := &ProviderPO{}
-	po.FromDomain(provider)
-	return r.db.Create(po).Error
+	ConvertProviderToPO(provider, po)
+	return r.db.WithContext(ctx).Create(po).Error
 }
 
-func (r *ProviderRepositoryImpl) Update(provider *domain.Provider) error {
+func (r *ProviderRepositoryImpl) Update(ctx context.Context, provider *domain.Provider) error {
 	po := &ProviderPO{}
-	po.FromDomain(provider)
-	return r.db.Model(po).Omit("created_at").Updates(po).Error
+	ConvertProviderToPO(provider, po)
+	return r.db.WithContext(ctx).Model(po).Omit("created_at").Updates(po).Error
 }
 
-func (r *ProviderRepositoryImpl) GetByID(id uint64) (*domain.Provider, error) {
+func (r *ProviderRepositoryImpl) FindByID(ctx context.Context, id uint64) (*domain.Provider, error) {
 	var po ProviderPO
-	if err := r.db.First(&po, id).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&po, id).Error; err != nil {
 		return nil, err
 	}
-	return po.ToDomain(), nil
+	return ConvertPOToProvider(&po), nil
 }
 
-func (r *ProviderRepositoryImpl) List() ([]*domain.Provider, error) {
+func (r *ProviderRepositoryImpl) FindPage(ctx context.Context, req *domain.PageRequest) (*domain.PageResult[*domain.Provider], error) {
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&ProviderPO{}).Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	offset := (req.Page - 1) * req.PageSize
 	var pos []ProviderPO
-	if err := r.db.Find(&pos).Error; err != nil {
+	if err := r.db.WithContext(ctx).Offset(offset).Limit(req.PageSize).Find(&pos).Error; err != nil {
 		return nil, err
 	}
-	domains := make([]*domain.Provider, len(pos))
-	for i, po := range pos {
-		domains[i] = po.ToDomain()
+
+	items := make([]*domain.Provider, len(pos))
+	for i := range pos {
+		items[i] = ConvertPOToProvider(&pos[i])
 	}
-	return domains, nil
+
+	return &domain.PageResult[*domain.Provider]{
+		Items:    items,
+		Total:    total,
+		Page:     req.Page,
+		PageSize: req.PageSize,
+	}, nil
 }
 
-func (r *ProviderRepositoryImpl) Delete(id uint64) error {
-	return r.db.Delete(&ProviderPO{}, id).Error
+func (r *ProviderRepositoryImpl) DeleteByID(ctx context.Context, id uint64) error {
+	return r.db.WithContext(ctx).Delete(&ProviderPO{}, id).Error
 }
 
-// ModelConfigPO ModelConfig 持久化对象
-type ModelConfigPO struct {
-	db.BasePO
-	ProviderID  uint64   `gorm:"column:provider_id;not null;index"`
-	Name        string   `gorm:"column:name;type:varchar(100);not null"`
-	ModelName   string   `gorm:"column:model_name;type:varchar(100);not null"`
-	MaxTokens   *int     `gorm:"column:max_tokens"`
-	Temperature *float64 `gorm:"column:temperature;type:decimal(3,2)"`
-	TopP        *float64 `gorm:"column:top_p;type:decimal(3,2)"`
-	ExtraConfig string   `gorm:"column:extra_config;type:text"`
-	IsEnabled   bool     `gorm:"column:is_enabled;default:true"`
-}
-
-// TableName 返回表名
-func (ModelConfigPO) TableName() string {
-	return "model_configs"
-}
-
-// ToDomain 转换为 Domain 实体
-func (po *ModelConfigPO) ToDomain() *domain.ModelConfig {
-	return &domain.ModelConfig{
-		ID:          po.ID,
-		ProviderID:  po.ProviderID,
-		Name:        po.Name,
-		ModelName:   po.ModelName,
-		MaxTokens:   po.MaxTokens,
-		Temperature: po.Temperature,
-		TopP:        po.TopP,
-		ExtraConfig: po.ExtraConfig,
-		IsEnabled:   po.IsEnabled,
-		CreatedAt:   po.CreatedAt,
-		UpdatedAt:   po.UpdatedAt,
+func (r *ProviderRepositoryImpl) ExistsByName(ctx context.Context, name string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&ProviderPO{}).Where("name = ?", name).Count(&count).Error; err != nil {
+		return false, err
 	}
+	return count > 0, nil
 }
 
-// FromDomain 从 Domain 实体转换
-func (po *ModelConfigPO) FromDomain(d *domain.ModelConfig) {
-	po.ID = d.ID
-	po.ProviderID = d.ProviderID
-	po.Name = d.Name
-	po.ModelName = d.ModelName
-	po.MaxTokens = d.MaxTokens
-	po.Temperature = d.Temperature
-	po.TopP = d.TopP
-	po.ExtraConfig = d.ExtraConfig
-	po.IsEnabled = d.IsEnabled
+func (r *ProviderRepositoryImpl) UpdateEnabled(ctx context.Context, id uint64, enabled bool) error {
+	return r.db.WithContext(ctx).Model(&ProviderPO{}).Where("id = ?", id).Update("enabled", enabled).Error
 }
 
-// ModelConfigRepositoryImpl model_config 仓库实现
+func (r *ProviderRepositoryImpl) UpdateHealthStatus(ctx context.Context, id uint64, status domain.HealthStatus, lastError string) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&ProviderPO{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"health_status":   status,
+		"last_error":      lastError,
+		"last_checked_at": &now,
+	}).Error
+}
+
 type ModelConfigRepositoryImpl struct {
 	db *gorm.DB
 }
@@ -148,52 +147,115 @@ func NewModelConfigRepositoryImpl(db *gorm.DB) domain.ModelConfigRepository {
 	return &ModelConfigRepositoryImpl{db: db}
 }
 
-func (r *ModelConfigRepositoryImpl) Create(modelConfig *domain.ModelConfig) error {
+func (r *ModelConfigRepositoryImpl) Create(ctx context.Context, modelConfig *domain.ModelConfig) error {
 	po := &ModelConfigPO{}
-	po.FromDomain(modelConfig)
-	return r.db.Create(po).Error
+	ConvertModelConfigToPO(modelConfig, po)
+	return r.db.WithContext(ctx).Create(po).Error
 }
 
-func (r *ModelConfigRepositoryImpl) GetByID(id uint64) (*domain.ModelConfig, error) {
+func (r *ModelConfigRepositoryImpl) Update(ctx context.Context, modelConfig *domain.ModelConfig) error {
+	po := &ModelConfigPO{}
+	ConvertModelConfigToPO(modelConfig, po)
+	return r.db.WithContext(ctx).Model(po).Omit("created_at").Updates(po).Error
+}
+
+func (r *ModelConfigRepositoryImpl) FindByID(ctx context.Context, id uint64) (*domain.ModelConfig, error) {
 	var po ModelConfigPO
-	if err := r.db.First(&po, id).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&po, id).Error; err != nil {
 		return nil, err
 	}
-	return po.ToDomain(), nil
+	return ConvertPOToModelConfig(&po), nil
 }
 
-func (r *ModelConfigRepositoryImpl) List() ([]*domain.ModelConfig, error) {
+func (r *ModelConfigRepositoryImpl) FindByProviderID(ctx context.Context, providerID uint64) ([]*domain.ModelConfig, error) {
 	var pos []ModelConfigPO
-	if err := r.db.Find(&pos).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("provider_id = ?", providerID).Find(&pos).Error; err != nil {
 		return nil, err
 	}
-	domains := make([]*domain.ModelConfig, len(pos))
-	for i, po := range pos {
-		domains[i] = po.ToDomain()
+	items := make([]*domain.ModelConfig, len(pos))
+	for i := range pos {
+		items[i] = ConvertPOToModelConfig(&pos[i])
 	}
-	return domains, nil
+	return items, nil
 }
 
-func (r *ModelConfigRepositoryImpl) ListByProviderID(providerID uint64) ([]*domain.ModelConfig, error) {
+func (r *ModelConfigRepositoryImpl) FindPage(ctx context.Context, req *domain.PageRequest) (*domain.PageResult[*domain.ModelConfig], error) {
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&ModelConfigPO{}).Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	offset := (req.Page - 1) * req.PageSize
 	var pos []ModelConfigPO
-	if err := r.db.Where("provider_id = ?", providerID).Find(&pos).Error; err != nil {
+	if err := r.db.WithContext(ctx).Offset(offset).Limit(req.PageSize).Find(&pos).Error; err != nil {
 		return nil, err
 	}
-	domains := make([]*domain.ModelConfig, len(pos))
-	for i, po := range pos {
-		domains[i] = po.ToDomain()
+
+	items := make([]*domain.ModelConfig, len(pos))
+	for i := range pos {
+		items[i] = ConvertPOToModelConfig(&pos[i])
 	}
-	return domains, nil
+
+	return &domain.PageResult[*domain.ModelConfig]{
+		Items:    items,
+		Total:    total,
+		Page:     req.Page,
+		PageSize: req.PageSize,
+	}, nil
 }
 
-func (r *ModelConfigRepositoryImpl) Delete(id uint64) error {
-	return r.db.Delete(&ModelConfigPO{}, id).Error
+func (r *ModelConfigRepositoryImpl) DeleteByID(ctx context.Context, id uint64) error {
+	return r.db.WithContext(ctx).Delete(&ModelConfigPO{}, id).Error
 }
 
-// Migrate 自动迁移表结构
+func (r *ModelConfigRepositoryImpl) ExistsByName(ctx context.Context, name string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&ModelConfigPO{}).Where("name = ?", name).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (r *ModelConfigRepositoryImpl) UpdateEnabled(ctx context.Context, id uint64, enabled bool) error {
+	return r.db.WithContext(ctx).Model(&ModelConfigPO{}).Where("id = ?", id).Update("enabled", enabled).Error
+}
+
+type ProviderHealthRepositoryImpl struct {
+	db *gorm.DB
+}
+
+func NewProviderHealthRepositoryImpl(db *gorm.DB) domain.ProviderHealthRepository {
+	return &ProviderHealthRepositoryImpl{db: db}
+}
+
+func (r *ProviderHealthRepositoryImpl) Create(ctx context.Context, health *domain.ProviderHealth) error {
+	po := &ProviderHealthPO{}
+	ConvertProviderHealthToPO(health, po)
+	return r.db.WithContext(ctx).Create(po).Error
+}
+
+func (r *ProviderHealthRepositoryImpl) FindLatestByProviderID(ctx context.Context, providerID uint64) (*domain.ProviderHealth, error) {
+	var po ProviderHealthPO
+	if err := r.db.WithContext(ctx).Where("provider_id = ?", providerID).Order("checked_at DESC").First(&po).Error; err != nil {
+		return nil, err
+	}
+	return ConvertPOToProviderHealth(&po), nil
+}
+
+func (r *ProviderHealthRepositoryImpl) FindLatestByModelConfigID(ctx context.Context, modelConfigID uint64) (*domain.ProviderHealth, error) {
+	var po ProviderHealthPO
+	if err := r.db.WithContext(ctx).Where("model_config_id = ?", modelConfigID).Order("checked_at DESC").First(&po).Error; err != nil {
+		return nil, err
+	}
+	return ConvertPOToProviderHealth(&po), nil
+}
+
 func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(&ProviderPO{}); err != nil {
 		return err
 	}
-	return db.AutoMigrate(&ModelConfigPO{})
+	if err := db.AutoMigrate(&ModelConfigPO{}); err != nil {
+		return err
+	}
+	return db.AutoMigrate(&ProviderHealthPO{})
 }

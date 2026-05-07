@@ -42,13 +42,15 @@ export const agentApi = {
     }
   },
 
-  get: (id: number) => get<Agent>(`/v1/agents/${id}`),
+  get: (id: number) => get<{ data: Agent }>(`/v1/agents/${id}`).then((res) => res.data),
 
-  getDetail: (id: number) => get<AgentDetail>(`/v1/agents/${id}/detail`),
+  getDetail: (id: number) => get<{ data: AgentDetail }>(`/v1/agents/${id}/detail`).then((res) => res.data),
 
-  create: (data: AgentForm) => post<Agent>('/v1/agents', buildAgentPayload(data)),
+  create: (data: AgentForm) =>
+    post<{ data: Agent }>('/v1/agents', buildAgentPayload(data)).then((res) => res.data),
 
-  update: (id: number, data: AgentForm) => put<Agent>(`/v1/agents/${id}`, buildAgentPayload(data)),
+  update: (id: number, data: AgentForm) =>
+    put<{ data: Agent }>(`/v1/agents/${id}`, buildAgentPayload(data)).then((res) => res.data),
 
   delete: (id: number) => del<void>(`/v1/agents/${id}`),
 

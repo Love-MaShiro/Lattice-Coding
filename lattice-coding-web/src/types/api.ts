@@ -5,7 +5,7 @@ export interface ApiResponse<T = any> {
 }
 
 export interface PageResult<T = any> {
-  list: T[]
+  data: T[]
   total: number
   page: number
   size: number

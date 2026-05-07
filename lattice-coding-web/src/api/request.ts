@@ -34,7 +34,8 @@ request.interceptors.response.use(
       return Promise.reject(response)
     }
 
-    return res.data
+    const { code: _code, message: _message, ...rest } = res as any
+    return rest
   },
   (error: AxiosError): Promise<never> => {
     if (error.response) {

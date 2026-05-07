@@ -25,6 +25,9 @@ defineProps<{
 <style scoped>
 .page-container {
   height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-header {
@@ -60,6 +63,10 @@ defineProps<{
 }
 
 .page-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--color-bg-card);
   border-radius: var(--radius-lg);
   padding: 20px;

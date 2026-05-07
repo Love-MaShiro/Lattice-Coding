@@ -1,9 +1,9 @@
 import axios, {
+  AxiosError,
   AxiosInstance,
   AxiosRequestConfig,
-  AxiosError,
-  InternalAxiosRequestConfig,
-  AxiosResponse
+  AxiosResponse,
+  InternalAxiosRequestConfig
 } from 'axios'
 import { ElMessage } from 'element-plus'
 import type { ApiResponse } from '@/types/api'
@@ -21,25 +21,26 @@ request.interceptors.request.use(
     }
     return config
   },
-  (error: AxiosError): Promise<never> => {
-    return Promise.reject(error)
-  }
+  (error: AxiosError): Promise<never> => Promise.reject(error)
 )
 
 request.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>): any => {
     const res = response.data
-    const successCodes: (string | number)[] = [0, '0', 200, '200']
-    if (!successCodes.includes(res.code)) {
-      ElMessage.error(res.message || '请求失败')
+    const code = String(res?.code ?? '').trim()
+
+    if (!['0', '200', '10000'].includes(code)) {
+      ElMessage.error(res?.message || '请求失败')
       return Promise.reject(response)
     }
+
     return res.data
   },
   (error: AxiosError): Promise<never> => {
     if (error.response) {
-      const status: number = error.response.status
-      let message: string = '请求失败'
+      const status = error.response.status
+      let message = '请求失败'
+
       if (status === 401) {
         message = '未授权，请重新登录'
       } else if (status === 403) {
@@ -53,10 +54,12 @@ request.interceptors.response.use(
       } else if (error.message) {
         message = error.message
       }
+
       ElMessage.error(message)
     } else {
       ElMessage.error('网络错误，请检查网络连接')
     }
+
     return Promise.reject(error)
   }
 )

@@ -1,5 +1,5 @@
 import { get, post, put, del } from './request'
-import type { Provider, ProviderForm } from '@/types/provider'
+import type { ModelConfig, ModelConfigForm, Provider, ProviderForm } from '@/types/provider'
 import type { PageResult, PageQuery } from '@/types/api'
 
 export const providerApi = {
@@ -13,5 +13,12 @@ export const providerApi = {
 
   delete: (id: number) => del<void>(`/providers/${id}`),
 
-  test: (id: number) => post<boolean>(`/providers/${id}/test`)
+  test: (id: number) => post<boolean>(`/providers/${id}/test`),
+
+  listModelConfigs: (params?: PageQuery & { provider_id?: number }) =>
+    get<PageResult<ModelConfig>>('/model-configs', { params }),
+
+  createModelConfig: (data: ModelConfigForm) => post<ModelConfig>('/model-configs', data),
+
+  updateModelConfig: (id: number, data: Partial<ModelConfigForm>) => put<ModelConfig>(`/model-configs/${id}`, data)
 }

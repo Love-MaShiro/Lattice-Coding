@@ -16,7 +16,7 @@
 </template>
 
 <script setup lang="ts" generic="T extends Record<string, any>">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import type { FormRules } from 'element-plus'
 
 export type DialogMode = 'create' | 'edit'

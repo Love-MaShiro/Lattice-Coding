@@ -3,6 +3,7 @@
     <el-table
       v-loading="loading"
       :data="tableData"
+      :height="height"
       stripe
       border
       style="width: 100%"
@@ -13,6 +14,9 @@
         :label="col.label"
         :prop="col.prop"
         :width="col.width"
+        :min-width="col.minWidth"
+        :fixed="col.fixed"
+        :align="col.align"
       >
         <template #default="{ row }" v-if="col.slot">
           <slot :name="col.slot" :row="row" />
@@ -37,17 +41,20 @@
 </template>
 
 <script setup lang="ts" generic="T extends Record<string, any>">
-import { ref, watch, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 
 export interface TableColumn {
   label: string
   prop?: string
   width?: string | number
+  minWidth?: string | number
   slot?: string
+  fixed?: boolean | 'left' | 'right'
+  align?: 'left' | 'center' | 'right'
 }
 
-export interface PageResult {
-  items: T[]
+export interface PageResult<TData> {
+  items: TData[]
   total: number
   page: number
   size: number
@@ -57,10 +64,12 @@ export type LoadDataFn<TData> = (page: number, size: number) => Promise<PageResu
 
 const props = withDefaults(defineProps<{
   columns: TableColumn[]
-    api: LoadDataFn<T>
+  api: LoadDataFn<T>
   showPagination?: boolean
+  height?: string | number
 }>(), {
-  showPagination: true
+  showPagination: true,
+  height: '100%'
 })
 
 const emit = defineEmits<{
@@ -117,6 +126,16 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: 100%;
+  min-height: 0;
+}
+
+:deep(.el-table) {
+  flex: 1;
+}
+
+:deep(.el-table__inner-wrapper) {
+  min-height: 100%;
 }
 
 .pagination-wrapper {

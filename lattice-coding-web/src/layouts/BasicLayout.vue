@@ -348,5 +348,13 @@ const getUserInitial = (name: string): string => {
   background-color: var(--color-bg-secondary);
   padding: 24px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.content :deep(> *) {
+  flex: 1;
+  min-height: 0;
 }
 </style>

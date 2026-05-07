@@ -7,28 +7,32 @@ import (
 	"lattice-coding/internal/modules/agent/domain"
 )
 
-type ModelConfigGetter interface {
-	GetModelConfig(ctx context.Context, id uint64) (uint64, error)
-	GetProvider(ctx context.Context, id uint64) error
+type ModelConfigChecker interface {
+	CheckModelConfigEnabled(ctx context.Context, modelConfigID uint64) error
 }
 
 type CommandService struct {
-	agentRepo         domain.AgentRepository
-	modelConfigGetter ModelConfigGetter
+	agentRepo          domain.AgentRepository
+	modelConfigChecker ModelConfigChecker
 }
 
-func NewCommandService(
-	agentRepo domain.AgentRepository,
-	modelConfigGetter ModelConfigGetter,
-) *CommandService {
+func NewCommandService(agentRepo domain.AgentRepository, modelConfigChecker ModelConfigChecker) *CommandService {
 	return &CommandService{
-		agentRepo:         agentRepo,
-		modelConfigGetter: modelConfigGetter,
+		agentRepo:          agentRepo,
+		modelConfigChecker: modelConfigChecker,
 	}
 }
 
 func (s *CommandService) CreateAgent(ctx context.Context, cmd *CreateAgentCommand) (*AgentDTO, error) {
-	exists, err := s.agentRepo.ExistsByName(ctx, cmd.Name)
+	if cmd.ModelConfigID == 0 {
+		return nil, errors.InvalidArg("model_config_id 不能为空")
+	}
+
+	if err := s.modelConfigChecker.CheckModelConfigEnabled(ctx, cmd.ModelConfigID); err != nil {
+		return nil, err
+	}
+
+	exists, err := s.agentRepo.ExistsByName(ctx, cmd.Name, 0)
 	if err != nil {
 		return nil, errors.DatabaseErrWithErr(err, "检查 Agent 名称失败")
 	}
@@ -36,28 +40,18 @@ func (s *CommandService) CreateAgent(ctx context.Context, cmd *CreateAgentComman
 		return nil, errors.AlreadyExistsErr("Agent 名称已存在")
 	}
 
-	providerID, err := s.modelConfigGetter.GetModelConfig(ctx, cmd.ModelConfigID)
-	if err != nil {
-		return nil, err
-	}
-	if providerID != cmd.ProviderID {
-		return nil, errors.ForbiddenErr("ModelConfig 不属于指定的 Provider")
-	}
-
-	if err := s.modelConfigGetter.GetProvider(ctx, cmd.ProviderID); err != nil {
-		return nil, err
-	}
-
 	agent := &domain.Agent{
-		Name:          cmd.Name,
-		Description:   cmd.Description,
-		ProviderID:    cmd.ProviderID,
-		ModelConfigID: cmd.ModelConfigID,
-		SystemPrompt:  cmd.SystemPrompt,
-		Tools:         cmd.Tools,
-		MaxSteps:      cmd.MaxSteps,
-		Timeout:       cmd.Timeout,
-		Enabled:       cmd.Enabled,
+		Name:            cmd.Name,
+		Description:     cmd.Description,
+		AgentType:       domain.AgentType(cmd.AgentType),
+		ModelConfigID:   cmd.ModelConfigID,
+		SystemPrompt:    cmd.SystemPrompt,
+		Temperature:     cmd.Temperature,
+		TopP:            cmd.TopP,
+		MaxTokens:       cmd.MaxTokens,
+		MaxContextTurns: cmd.MaxContextTurns,
+		MaxSteps:        cmd.MaxSteps,
+		Enabled:         cmd.Enabled,
 	}
 
 	if err := s.agentRepo.Create(ctx, agent); err != nil {
@@ -77,7 +71,7 @@ func (s *CommandService) UpdateAgent(ctx context.Context, id uint64, cmd *Update
 	}
 
 	if cmd.Name != "" && cmd.Name != agent.Name {
-		exists, err := s.agentRepo.ExistsByName(ctx, cmd.Name)
+		exists, err := s.agentRepo.ExistsByName(ctx, cmd.Name, id)
 		if err != nil {
 			return nil, errors.DatabaseErrWithErr(err, "检查 Agent 名称失败")
 		}
@@ -87,42 +81,35 @@ func (s *CommandService) UpdateAgent(ctx context.Context, id uint64, cmd *Update
 		agent.Name = cmd.Name
 	}
 
-	if cmd.ProviderID > 0 && cmd.ProviderID != agent.ProviderID {
-		if err := s.modelConfigGetter.GetProvider(ctx, cmd.ProviderID); err != nil {
-			return nil, err
-		}
-		agent.ProviderID = cmd.ProviderID
-	}
-
-	if cmd.ModelConfigID > 0 && cmd.ModelConfigID != agent.ModelConfigID {
-		providerID, err := s.modelConfigGetter.GetModelConfig(ctx, cmd.ModelConfigID)
-		if err != nil {
-			return nil, err
-		}
-		effectiveProviderID := cmd.ProviderID
-		if effectiveProviderID == 0 {
-			effectiveProviderID = agent.ProviderID
-		}
-		if providerID != effectiveProviderID {
-			return nil, errors.ForbiddenErr("ModelConfig 不属于指定的 Provider")
-		}
-		agent.ModelConfigID = cmd.ModelConfigID
-	}
-
 	if cmd.Description != "" {
 		agent.Description = cmd.Description
+	}
+	if cmd.AgentType != "" {
+		agent.AgentType = domain.AgentType(cmd.AgentType)
+	}
+	if cmd.ModelConfigID > 0 && cmd.ModelConfigID != agent.ModelConfigID {
+		if err := s.modelConfigChecker.CheckModelConfigEnabled(ctx, cmd.ModelConfigID); err != nil {
+			return nil, err
+		}
+		agent.ModelConfigID = cmd.ModelConfigID
 	}
 	if cmd.SystemPrompt != "" {
 		agent.SystemPrompt = cmd.SystemPrompt
 	}
-	if cmd.Tools != "" {
-		agent.Tools = cmd.Tools
+	if cmd.Temperature > 0 {
+		agent.Temperature = cmd.Temperature
+	}
+	if cmd.TopP > 0 {
+		agent.TopP = cmd.TopP
+	}
+	if cmd.MaxTokens > 0 {
+		agent.MaxTokens = cmd.MaxTokens
+	}
+	if cmd.MaxContextTurns > 0 {
+		agent.MaxContextTurns = cmd.MaxContextTurns
 	}
 	if cmd.MaxSteps > 0 {
 		agent.MaxSteps = cmd.MaxSteps
-	}
-	if cmd.Timeout > 0 {
-		agent.Timeout = cmd.Timeout
 	}
 	if cmd.Enabled != nil {
 		agent.Enabled = *cmd.Enabled

@@ -21,14 +21,17 @@ type Modules struct {
 }
 
 func InitModules(d *Dependencies) *Modules {
-	agentModule := agent.NewModule(&agent.ModuleProvider{
-		DB: d.MySQL,
-	})
-
 	providerModule := provider.NewModule(&provider.ModuleProvider{
 		DB:           d.MySQL,
 		Encryptor:    crypto.NewNoopEncryptor(),
 		AgentChecker: agent.NewAgentRefCounter(d.MySQL),
+	})
+
+	modelConfigChecker := NewProviderModelConfigChecker(providerModule.QueryService)
+
+	agentModule := agent.NewModule(&agent.ModuleProvider{
+		DB:                 d.MySQL,
+		ModelConfigChecker: modelConfigChecker,
 	})
 
 	return &Modules{

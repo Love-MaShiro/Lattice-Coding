@@ -10,6 +10,7 @@ func RegisterRoutes(api *gin.RouterGroup, h *Handler) {
 		agents.POST("", h.CreateAgent)
 		agents.GET("", h.ListAgents)
 		agents.GET("/:id", h.GetAgent)
+		agents.GET("/:id/detail", h.GetAgentDetail)
 		agents.PUT("/:id", h.UpdateAgent)
 		agents.DELETE("/:id", h.DeleteAgent)
 		agents.POST("/:id/enable", h.EnableAgent)

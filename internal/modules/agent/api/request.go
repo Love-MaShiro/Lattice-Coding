@@ -5,27 +5,31 @@ import (
 )
 
 type CreateAgentRequest struct {
-	Name          string `json:"name" binding:"required"`
-	Description   string `json:"description"`
-	ProviderID    uint64 `json:"provider_id" binding:"required"`
-	ModelConfigID uint64 `json:"model_config_id" binding:"required"`
-	SystemPrompt  string `json:"system_prompt"`
-	Tools         string `json:"tools"`
-	MaxSteps      int    `json:"max_steps"`
-	Timeout       int    `json:"timeout"`
-	Enabled       *bool  `json:"enabled"`
+	Name            string  `json:"name" binding:"required"`
+	Description     string  `json:"description"`
+	AgentType       string  `json:"agent_type"`
+	ModelConfigID   uint64  `json:"model_config_id" binding:"required"`
+	SystemPrompt    string  `json:"system_prompt"`
+	Temperature     float64 `json:"temperature"`
+	TopP            float64 `json:"top_p"`
+	MaxTokens       int     `json:"max_tokens"`
+	MaxContextTurns int     `json:"max_context_turns"`
+	MaxSteps        int     `json:"max_steps"`
+	Enabled         *bool   `json:"enabled"`
 }
 
 type UpdateAgentRequest struct {
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	ProviderID    uint64 `json:"provider_id"`
-	ModelConfigID uint64 `json:"model_config_id"`
-	SystemPrompt  string `json:"system_prompt"`
-	Tools         string `json:"tools"`
-	MaxSteps      int    `json:"max_steps"`
-	Timeout       int    `json:"timeout"`
-	Enabled       *bool  `json:"enabled"`
+	Name            string  `json:"name"`
+	Description     string  `json:"description"`
+	AgentType       string  `json:"agent_type"`
+	ModelConfigID   uint64  `json:"model_config_id"`
+	SystemPrompt    string  `json:"system_prompt"`
+	Temperature     float64 `json:"temperature"`
+	TopP            float64 `json:"top_p"`
+	MaxTokens       int     `json:"max_tokens"`
+	MaxContextTurns int     `json:"max_context_turns"`
+	MaxSteps        int     `json:"max_steps"`
+	Enabled         *bool   `json:"enabled"`
 }
 
 type AgentPageQuery struct {
@@ -42,33 +46,33 @@ func ToCreateAgentCommand(req *CreateAgentRequest) *application.CreateAgentComma
 	if req.MaxSteps > 0 {
 		maxSteps = req.MaxSteps
 	}
-	timeout := 1200
-	if req.Timeout > 0 {
-		timeout = req.Timeout
-	}
 	return &application.CreateAgentCommand{
-		Name:          req.Name,
-		Description:   req.Description,
-		ProviderID:    req.ProviderID,
-		ModelConfigID: req.ModelConfigID,
-		SystemPrompt:  req.SystemPrompt,
-		Tools:         req.Tools,
-		MaxSteps:      maxSteps,
-		Timeout:       timeout,
-		Enabled:       enabled,
+		Name:            req.Name,
+		Description:     req.Description,
+		AgentType:       req.AgentType,
+		ModelConfigID:   req.ModelConfigID,
+		SystemPrompt:    req.SystemPrompt,
+		Temperature:     req.Temperature,
+		TopP:            req.TopP,
+		MaxTokens:       req.MaxTokens,
+		MaxContextTurns: req.MaxContextTurns,
+		MaxSteps:        maxSteps,
+		Enabled:         enabled,
 	}
 }
 
 func ToUpdateAgentCommand(req *UpdateAgentRequest) *application.UpdateAgentCommand {
 	return &application.UpdateAgentCommand{
-		Name:          req.Name,
-		Description:   req.Description,
-		ProviderID:    req.ProviderID,
-		ModelConfigID: req.ModelConfigID,
-		SystemPrompt:  req.SystemPrompt,
-		Tools:         req.Tools,
-		MaxSteps:      req.MaxSteps,
-		Timeout:       req.Timeout,
-		Enabled:       req.Enabled,
+		Name:            req.Name,
+		Description:     req.Description,
+		AgentType:       req.AgentType,
+		ModelConfigID:   req.ModelConfigID,
+		SystemPrompt:    req.SystemPrompt,
+		Temperature:     req.Temperature,
+		TopP:            req.TopP,
+		MaxTokens:       req.MaxTokens,
+		MaxContextTurns: req.MaxContextTurns,
+		MaxSteps:        req.MaxSteps,
+		Enabled:         req.Enabled,
 	}
 }

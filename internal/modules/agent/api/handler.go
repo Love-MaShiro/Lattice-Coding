@@ -58,6 +58,23 @@ func (h *Handler) GetAgent(c *gin.Context) {
 	response.Ok(c, resp)
 }
 
+func (h *Handler) GetAgentDetail(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		handler.HandleError(c, err)
+		return
+	}
+
+	result, err := h.querySvc.GetAgentDetail(c.Request.Context(), id)
+	if err != nil {
+		handler.HandleError(c, err)
+		return
+	}
+
+	resp := ToAgentDetailResponse(result)
+	response.Ok(c, resp)
+}
+
 func (h *Handler) ListAgents(c *gin.Context) {
 	var query AgentPageQuery
 	if err := c.ShouldBindQuery(&query); err != nil {

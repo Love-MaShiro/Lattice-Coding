@@ -7,18 +7,21 @@ import (
 )
 
 type AgentResponse struct {
-	ID            uint64    `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	ProviderID    uint64    `json:"provider_id"`
-	ModelConfigID uint64    `json:"model_config_id"`
-	SystemPrompt  string    `json:"system_prompt"`
-	Tools         string    `json:"tools"`
-	MaxSteps      int       `json:"max_steps"`
-	Timeout       int       `json:"timeout"`
-	Enabled       bool      `json:"enabled"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID              uint64    `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	AgentType       string    `json:"agent_type"`
+	ModelConfigID   uint64    `json:"model_config_id"`
+	SystemPrompt    string    `json:"system_prompt"`
+	Temperature     float64   `json:"temperature"`
+	TopP            float64   `json:"top_p"`
+	MaxTokens       int       `json:"max_tokens"`
+	MaxContextTurns int       `json:"max_context_turns"`
+	MaxSteps        int       `json:"max_steps"`
+	Enabled         bool      `json:"enabled"`
+	ToolCount       int64     `json:"tool_count"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 func ToAgentResponse(dto *application.AgentDTO) AgentResponse {
@@ -26,18 +29,21 @@ func ToAgentResponse(dto *application.AgentDTO) AgentResponse {
 		return AgentResponse{}
 	}
 	return AgentResponse{
-		ID:            dto.ID,
-		Name:          dto.Name,
-		Description:   dto.Description,
-		ProviderID:    dto.ProviderID,
-		ModelConfigID: dto.ModelConfigID,
-		SystemPrompt:  dto.SystemPrompt,
-		Tools:         dto.Tools,
-		MaxSteps:      dto.MaxSteps,
-		Timeout:       dto.Timeout,
-		Enabled:       dto.Enabled,
-		CreatedAt:     dto.CreatedAt,
-		UpdatedAt:     dto.UpdatedAt,
+		ID:              dto.ID,
+		Name:            dto.Name,
+		Description:     dto.Description,
+		AgentType:       dto.AgentType,
+		ModelConfigID:   dto.ModelConfigID,
+		SystemPrompt:    dto.SystemPrompt,
+		Temperature:     dto.Temperature,
+		TopP:            dto.TopP,
+		MaxTokens:       dto.MaxTokens,
+		MaxContextTurns: dto.MaxContextTurns,
+		MaxSteps:        dto.MaxSteps,
+		Enabled:         dto.Enabled,
+		ToolCount:       dto.ToolCount,
+		CreatedAt:       dto.CreatedAt,
+		UpdatedAt:       dto.UpdatedAt,
 	}
 }
 
@@ -62,4 +68,42 @@ type AgentPageResponse struct {
 	Total    int64           `json:"total"`
 	Page     int             `json:"page"`
 	PageSize int             `json:"page_size"`
+}
+
+type AgentToolResponse struct {
+	ID        uint64 `json:"id"`
+	ToolID    uint64 `json:"tool_id"`
+	ToolType  string `json:"tool_type"`
+	CreatedAt string `json:"created_at"`
+}
+
+type AgentDetailResponse struct {
+	AgentResponse
+	Tools []AgentToolResponse `json:"tools"`
+}
+
+func ToAgentToolResponse(dto *application.AgentToolDTO) AgentToolResponse {
+	if dto == nil {
+		return AgentToolResponse{}
+	}
+	return AgentToolResponse{
+		ID:        dto.ID,
+		ToolID:    dto.ToolID,
+		ToolType:  dto.ToolType,
+		CreatedAt: dto.CreatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
+	}
+}
+
+func ToAgentDetailResponse(dto *application.AgentDetailDTO) AgentDetailResponse {
+	if dto == nil {
+		return AgentDetailResponse{}
+	}
+	tools := make([]AgentToolResponse, len(dto.Tools))
+	for i, t := range dto.Tools {
+		tools[i] = ToAgentToolResponse(t)
+	}
+	return AgentDetailResponse{
+		AgentResponse: ToAgentResponse(&dto.AgentDTO),
+		Tools:         tools,
+	}
 }

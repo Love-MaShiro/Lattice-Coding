@@ -11,11 +11,13 @@ import (
 )
 
 type ModuleProvider struct {
-	DB *gorm.DB
+	DB                 *gorm.DB
+	ModelConfigChecker application.ModelConfigChecker
 }
 
 type Module struct {
 	AgentRepo      domain.AgentRepository
+	AgentToolRepo  domain.AgentToolRepository
 	CommandService *application.CommandService
 	QueryService   *application.QueryService
 	Handler        *api.Handler
@@ -25,14 +27,15 @@ func NewModule(p *ModuleProvider) *Module {
 	_ = persistence.Migrate(p.DB)
 
 	agentRepo := persistence.NewAgentRepositoryImpl(p.DB)
-	providerGetter := persistence.NewProviderGetter(p.DB)
+	agentToolRepo := persistence.NewAgentToolRepositoryImpl(p.DB)
 
-	cmdSvc := application.NewCommandService(agentRepo, providerGetter)
-	querySvc := application.NewQueryService(agentRepo)
+	cmdSvc := application.NewCommandService(agentRepo, p.ModelConfigChecker)
+	querySvc := application.NewQueryService(agentRepo, agentToolRepo)
 	handler := api.NewHandler(cmdSvc, querySvc)
 
 	return &Module{
 		AgentRepo:      agentRepo,
+		AgentToolRepo:  agentToolRepo,
 		CommandService: cmdSvc,
 		QueryService:   querySvc,
 		Handler:        handler,

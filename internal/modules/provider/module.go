@@ -90,6 +90,7 @@ func NewModule(p *ModuleProvider) *Module {
 		HealthService:      healthSvc,
 		HealthCheckService: healthCheckSvc,
 		SyncService:        syncSvc,
+		LLMFactory:         llmFactory,
 		Handler:            handler,
 	}
 }

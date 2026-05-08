@@ -1,0 +1,10 @@
+.git
+.codex
+.trae
+.trar
+bin
+logs
+lattice-coding-web/node_modules
+lattice-coding-web/dist
+lattice-coding-web/.vite
+**/.DS_Store

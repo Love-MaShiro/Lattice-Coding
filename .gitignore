@@ -1,0 +1,12 @@
+.codex/
+.trae/
+.trar/
+
+bin/
+logs/
+
+lattice-coding-web/node_modules/
+lattice-coding-web/dist/
+lattice-coding-web/.vite/
+lattice-coding-web/*.tsbuildinfo
+lattice-coding-web/vite.config.js

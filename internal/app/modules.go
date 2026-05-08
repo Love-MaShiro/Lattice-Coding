@@ -18,6 +18,7 @@ import (
 type Modules struct {
 	ProviderModule *provider.Module
 	AgentModule    *agent.Module
+	ChatModule     *chat.Module
 }
 
 func InitModules(d *Dependencies) *Modules {
@@ -34,16 +35,24 @@ func InitModules(d *Dependencies) *Modules {
 		ModelConfigChecker: modelConfigChecker,
 	})
 
+	chatModule := chat.NewModule(&chat.ModuleProvider{
+		DB:           d.MySQL,
+		Redis:        d.Redis,
+		ModelFactory: providerModule.LLMFactory,
+		MemoryConfig: d.Config.LLM.ChatMemory,
+	})
+
 	return &Modules{
 		ProviderModule: providerModule,
 		AgentModule:    agentModule,
+		ChatModule:     chatModule,
 	}
 }
 
 func (m *Modules) RegisterRoutes(api *gin.RouterGroup) {
 	provider.RegisterRoutes(api, m.ProviderModule)
 	agent.RegisterRoutes(api, m.AgentModule)
-	chat.RegisterRoutes(api)
+	chat.RegisterRoutes(api, m.ChatModule)
 	run.RegisterRoutes(api)
 	mcp.RegisterRoutes(api)
 	workflow.RegisterRoutes(api)

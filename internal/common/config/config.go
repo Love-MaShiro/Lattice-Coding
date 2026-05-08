@@ -62,12 +62,19 @@ type PostgresConfig struct {
 }
 
 type LLMConfig struct {
+	ChatMemory     ChatMemoryConfig     `yaml:"chat_memory"`
 	Pool           PoolConfig           `yaml:"pool"`
 	Stream         PoolConfig           `yaml:"stream"`
 	Timeout        TimeoutConfig        `yaml:"timeout"`
 	Retry          RetryConfig          `yaml:"retry"`
 	CircuitBreaker CircuitBreakerConfig `yaml:"circuit_breaker"`
 	Routing        RoutingConfig        `yaml:"routing"`
+}
+
+type ChatMemoryConfig struct {
+	CompressionThreshold int    `yaml:"compression_threshold"`
+	RetainAfterCompress  int    `yaml:"retain_after_compress"`
+	CacheTTL             string `yaml:"cache_ttl"`
 }
 
 type TimeoutConfig struct {
@@ -223,6 +230,16 @@ func applyEnvOverrides(cfg *Config) error {
 		cfg.Postgres.Database = env
 	}
 
+	if env := getEnv("LLM_CHAT_MEMORY_COMPRESSION_THRESHOLD"); env != "" {
+		cfg.LLM.ChatMemory.CompressionThreshold = parseInt(env)
+	}
+	if env := getEnv("LLM_CHAT_MEMORY_RETAIN_AFTER_COMPRESS"); env != "" {
+		cfg.LLM.ChatMemory.RetainAfterCompress = parseInt(env)
+	}
+	if env := getEnv("LLM_CHAT_MEMORY_CACHE_TTL"); env != "" {
+		cfg.LLM.ChatMemory.CacheTTL = env
+	}
+
 	if env := getEnv("HTTP_PORT"); env != "" {
 		cfg.HTTP.Port = env
 	}
@@ -304,6 +321,16 @@ func setDefaults(cfg *Config) error {
 	}
 	if cfg.Postgres.SSLMode == "" {
 		cfg.Postgres.SSLMode = "disable"
+	}
+
+	if cfg.LLM.ChatMemory.CompressionThreshold == 0 {
+		cfg.LLM.ChatMemory.CompressionThreshold = 80
+	}
+	if cfg.LLM.ChatMemory.RetainAfterCompress == 0 {
+		cfg.LLM.ChatMemory.RetainAfterCompress = 20
+	}
+	if cfg.LLM.ChatMemory.CacheTTL == "" {
+		cfg.LLM.ChatMemory.CacheTTL = "24h"
 	}
 
 	if cfg.HTTP.Port == "" {

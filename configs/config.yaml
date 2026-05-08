@@ -37,6 +37,10 @@ postgres:
   ssl_mode: disable
 
 llm:
+  chat_memory:
+    compression_threshold: 80
+    retain_after_compress: 20
+    cache_ttl: 24h
   pool:
     max_concurrent: 10
     acquire_timeout: 3s

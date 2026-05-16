@@ -18,6 +18,7 @@ type CompletionRequest struct {
 	AgentID   uint64 `json:"agent_id"`
 	SessionID uint64 `json:"session_id"`
 	Message   string `json:"message" binding:"required"`
+	Mode      string `json:"mode"`
 }
 
 type SessionPageQuery struct {
@@ -50,5 +51,6 @@ func ToCompletionCommand(req *CompletionRequest) *application.CompletionCommand 
 		AgentID:   req.AgentID,
 		SessionID: req.SessionID,
 		Message:   req.Message,
+		Mode:      req.Mode,
 	}
 }

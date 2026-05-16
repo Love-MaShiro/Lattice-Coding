@@ -1,13 +1,14 @@
 package query
 
 type QueryResult struct {
-	RunID    string
-	Mode     ExecutionMode
-	Content  string
-	Messages []Message
-	Steps    []StepResult
-	Usage    Usage
-	Metadata map[string]interface{}
+	RunID       string
+	Mode        ExecutionMode
+	Content     string
+	FinalAnswer string
+	Messages    []Message
+	Steps       []StepResult
+	Usage       Usage
+	Metadata    map[string]interface{}
 }
 
 type Result = QueryResult

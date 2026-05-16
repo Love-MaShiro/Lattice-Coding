@@ -11,6 +11,9 @@ import (
 	"lattice-coding/internal/modules/run"
 	"lattice-coding/internal/modules/safety"
 	"lattice-coding/internal/modules/workflow"
+	runtimeagent "lattice-coding/internal/runtime/agent"
+	runtimequery "lattice-coding/internal/runtime/query"
+	querystrategy "lattice-coding/internal/runtime/query/strategy"
 	runtimetool "lattice-coding/internal/runtime/tool"
 	"lattice-coding/internal/runtime/tool/builtin"
 
@@ -33,7 +36,7 @@ func InitModules(d *Dependencies) *Modules {
 		Encryptor:    crypto.NewNoopEncryptor(),
 		AgentChecker: agent.NewAgentRefCounter(d.MySQL),
 	})
-	d.LLMExecutor.SetModelFactory(providerModule.LLMFactory)
+	d.LLMExecutor.SetModelConfigResolver(providerModule.ModelConfigResolver())
 
 	modelConfigChecker := NewProviderModelConfigChecker(providerModule.QueryService)
 
@@ -41,11 +44,22 @@ func InitModules(d *Dependencies) *Modules {
 		DB:                 d.MySQL,
 		ModelConfigChecker: modelConfigChecker,
 	})
+	readStateManager := runtimetool.NewInMemoryFileReadStateManager()
+	_ = builtin.RegisterCodingTools(runtimetool.Default().Registry(), readStateManager)
+
+	agentRuntime := runtimeagent.NewAgentRuntime(d.LLMExecutor, runtimetool.Default())
+	queryEngine := runtimequery.NewEngine(
+		runtimequery.WithStrategy(querystrategy.NewDirectChatStrategy(d.LLMExecutor)),
+		runtimequery.WithStrategy(querystrategy.NewPureReActStrategy(agentRuntime)),
+		runtimequery.WithStrategy(querystrategy.NewFixedWorkflowStrategy()),
+		runtimequery.WithStrategy(querystrategy.NewPlanGraphStrategy()),
+	)
 
 	chatModule := chat.NewModule(&chat.ModuleProvider{
 		DB:           d.MySQL,
 		Redis:        d.Redis,
 		LLMExecutor:  d.LLMExecutor,
+		QueryEngine:  queryEngine,
 		MemoryConfig: d.Config.LLM.ChatMemory,
 	})
 	knowledgeModule := knowledge.NewModule(&knowledge.ModuleProvider{
@@ -57,8 +71,6 @@ func InitModules(d *Dependencies) *Modules {
 	auditModule := audit.NewModule(&audit.ModuleProvider{
 		DB: d.MySQL,
 	})
-	readStateManager := runtimetool.NewInMemoryFileReadStateManager()
-	_ = builtin.RegisterCodingTools(runtimetool.Default().Registry(), readStateManager)
 	runtimetool.Default().SetToolInvocationRecorder(runModule.InvocationRecorder)
 	runtimetool.Default().SetAuditRecorder(auditModule.AuditRecorder)
 	workflowModule := workflow.NewModule(&workflow.ModuleProvider{

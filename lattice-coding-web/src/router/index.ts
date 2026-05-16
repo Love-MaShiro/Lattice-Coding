@@ -24,6 +24,12 @@ const router = createRouter({
       name: 'Chat',
       component: () => import('@/views/chat/ChatPage.vue'),
       meta: { title: '对话' }
+    },
+    {
+      path: '/run',
+      name: 'Run',
+      component: () => import('@/views/run/index.vue'),
+      meta: { title: 'Run' }
     }
   ]
 })

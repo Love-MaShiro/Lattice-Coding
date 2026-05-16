@@ -2,7 +2,9 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	stderrors "errors"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	redisutil "lattice-coding/internal/common/redis"
 	"lattice-coding/internal/modules/chat/domain"
 	"lattice-coding/internal/runtime/llm"
+	"lattice-coding/internal/runtime/query"
 )
 
 type AgentGetter interface {
@@ -26,15 +29,26 @@ type CommandService struct {
 	sessionRepo  domain.SessionRepository
 	messageRepo  domain.MessageRepository
 	agentGetter  AgentGetter
+	queryEngine  *query.QueryEngine
 	llmExecutor  *llm.Executor
 	redisClient  *redisutil.Client
 	memoryConfig MemoryConfig
+}
+
+var staticAgentToolNames = []string{
+	"file.list",
+	"file.read",
+	"code.grep",
+	"git.diff",
+	"file.edit",
+	"shell.run",
 }
 
 func NewCommandService(
 	sessionRepo domain.SessionRepository,
 	messageRepo domain.MessageRepository,
 	agentGetter AgentGetter,
+	queryEngine *query.QueryEngine,
 	llmExecutor *llm.Executor,
 	redisClient *redisutil.Client,
 	memoryConfig MemoryConfig,
@@ -44,6 +58,7 @@ func NewCommandService(
 		sessionRepo:  sessionRepo,
 		messageRepo:  messageRepo,
 		agentGetter:  agentGetter,
+		queryEngine:  queryEngine,
 		llmExecutor:  llmExecutor,
 		redisClient:  redisClient,
 		memoryConfig: memoryConfig,
@@ -158,7 +173,8 @@ func (s *CommandService) Complete(ctx context.Context, cmd *CompletionCommand) (
 		return nil, err
 	}
 
-	if err := s.saveUserMessage(ctx, session, cmd.Message); err != nil {
+	userMessage, err := s.saveUserMessage(ctx, session, cmd.Message)
+	if err != nil {
 		return nil, err
 	}
 
@@ -166,18 +182,38 @@ func (s *CommandService) Complete(ctx context.Context, cmd *CompletionCommand) (
 		return nil, errors.LLMErrWithErr(err, "compress conversation context failed")
 	}
 
-	messages, err := s.buildModelMessages(ctx, session, agent)
+	messages, err := s.buildQueryHistoryMessages(ctx, session, userMessage.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, result := s.llmExecutor.Chat(ctx, buildChatRequest(agent, messages))
-	if !result.Success {
-		return nil, errors.LLMErrWithErr(result.Error, "model generate failed")
+	if s.queryEngine == nil {
+		return nil, errors.LLMErr("query engine is not initialized")
+	}
+	result, err := s.queryEngine.Run(ctx, query.QueryRequest{
+		SessionID:     uintToString(session.ID),
+		AgentID:       uintToString(agent.ID),
+		Input:         cmd.Message,
+		Messages:      messages,
+		SystemPrompt:  agent.SystemPrompt,
+		Summary:       session.Summary,
+		Mode:          completionMode(cmd.Mode),
+		ModelConfigID: agent.ModelConfigID,
+		Temperature:   optionalPositiveFloat(agent.Temperature),
+		TopP:          optionalPositiveFloat(agent.TopP),
+		MaxTokens:     agent.MaxTokens,
+		AllowedTools:  staticAgentTools(),
+		WorkingDir:    defaultWorkingDir(),
+	})
+	if err != nil {
+		return nil, errors.LLMErrWithErr(err, "query completion failed")
 	}
 
-	assistantContent := strings.TrimSpace(resp.Content)
-	assistantMsg, err := s.saveAssistantMessage(ctx, session, assistantContent)
+	assistantContent := strings.TrimSpace(result.FinalAnswer)
+	if assistantContent == "" {
+		assistantContent = strings.TrimSpace(result.Content)
+	}
+	assistantMsg, err := s.saveAssistantMessageWithMeta(ctx, session, assistantContent, buildAssistantMeta(result))
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +225,7 @@ func (s *CommandService) Complete(ctx context.Context, cmd *CompletionCommand) (
 	}, nil
 }
 
-func (s *CommandService) StreamComplete(ctx context.Context, cmd *CompletionCommand, onDelta func(delta string) error) (*CompletionDTO, error) {
+func (s *CommandService) StreamComplete(ctx context.Context, cmd *CompletionCommand, onEvent func(event query.StreamEvent) error) (*CompletionDTO, error) {
 	if strings.TrimSpace(cmd.Message) == "" {
 		return nil, errors.InvalidArg("message is required")
 	}
@@ -199,7 +235,8 @@ func (s *CommandService) StreamComplete(ctx context.Context, cmd *CompletionComm
 		return nil, err
 	}
 
-	if err := s.saveUserMessage(ctx, session, cmd.Message); err != nil {
+	userMessage, err := s.saveUserMessage(ctx, session, cmd.Message)
+	if err != nil {
 		return nil, err
 	}
 
@@ -207,30 +244,56 @@ func (s *CommandService) StreamComplete(ctx context.Context, cmd *CompletionComm
 		return nil, errors.LLMErrWithErr(err, "compress conversation context failed")
 	}
 
-	messages, err := s.buildModelMessages(ctx, session, agent)
+	messages, err := s.buildQueryHistoryMessages(ctx, session, userMessage.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	stream, result := s.llmExecutor.Stream(ctx, buildChatRequest(agent, messages))
-	if !result.Success {
-		return nil, errors.LLMErrWithErr(result.Error, "model stream failed")
+	if s.queryEngine == nil {
+		return nil, errors.LLMErr("query engine is not initialized")
+	}
+	stream, err := s.queryEngine.Stream(ctx, query.QueryRequest{
+		SessionID:     uintToString(session.ID),
+		AgentID:       uintToString(agent.ID),
+		Input:         cmd.Message,
+		Messages:      messages,
+		SystemPrompt:  agent.SystemPrompt,
+		Summary:       session.Summary,
+		Mode:          completionMode(cmd.Mode),
+		ModelConfigID: agent.ModelConfigID,
+		Temperature:   optionalPositiveFloat(agent.Temperature),
+		TopP:          optionalPositiveFloat(agent.TopP),
+		MaxTokens:     agent.MaxTokens,
+		AllowedTools:  staticAgentTools(),
+		WorkingDir:    defaultWorkingDir(),
+		Stream:        true,
+	})
+	if err != nil {
+		return nil, errors.LLMErrWithErr(err, "query stream failed")
 	}
 
 	var builder strings.Builder
-	for chunk := range stream {
-		if chunk.Err != nil {
-			if stderrors.Is(chunk.Err, context.Canceled) {
-				return nil, chunk.Err
+	var finishedEvent *query.StreamEvent
+	for event := range stream {
+		if event.Err != nil {
+			if onEvent != nil {
+				_ = onEvent(event)
 			}
-			return nil, errors.LLMErrWithErr(chunk.Err, "read model stream failed")
+			if stderrors.Is(event.Err, context.Canceled) {
+				return nil, event.Err
+			}
+			return nil, errors.LLMErrWithErr(event.Err, "read query stream failed")
 		}
-		if chunk.Done || chunk.Content == "" {
+		if event.Type == query.StreamEventLLMDelta {
+			builder.WriteString(event.Content)
+		}
+		if event.Type == query.StreamEventRunFinished {
+			copied := event
+			finishedEvent = &copied
 			continue
 		}
-		builder.WriteString(chunk.Content)
-		if onDelta != nil {
-			if err := onDelta(chunk.Content); err != nil {
+		if onEvent != nil {
+			if err := onEvent(event); err != nil {
 				return nil, err
 			}
 		}
@@ -241,6 +304,18 @@ func (s *CommandService) StreamComplete(ctx context.Context, cmd *CompletionComm
 	if err != nil {
 		return nil, err
 	}
+	if finishedEvent != nil && onEvent != nil {
+		finishedEvent.Content = assistantContent
+		finishedEvent.Done = true
+		if finishedEvent.Metadata == nil {
+			finishedEvent.Metadata = map[string]interface{}{}
+		}
+		finishedEvent.Metadata["session_id"] = session.ID
+		finishedEvent.Metadata["message_id"] = assistantMsg.ID
+		if err := onEvent(*finishedEvent); err != nil {
+			return nil, err
+		}
+	}
 
 	return &CompletionDTO{
 		SessionID: session.ID,
@@ -249,7 +324,49 @@ func (s *CommandService) StreamComplete(ctx context.Context, cmd *CompletionComm
 	}, nil
 }
 
-func (s *CommandService) saveUserMessage(ctx context.Context, session *domain.ChatSession, content string) error {
+func (s *CommandService) CompactSession(ctx context.Context, cmd *CompactSessionCommand) (*SessionDTO, error) {
+	if cmd.SessionID == 0 {
+		return nil, errors.InvalidArg("session_id is required")
+	}
+	session, err := s.getSession(ctx, cmd.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	agent, err := s.getEnabledAgent(ctx, session.AgentID)
+	if err != nil {
+		return nil, err
+	}
+	if s.llmExecutor == nil {
+		return nil, errors.LLMErr("llm executor is not initialized")
+	}
+
+	activeMessages, err := s.messageRepo.FindBySessionIDAfterID(ctx, session.ID, session.SummarizedUntilMessageID, 0)
+	if err != nil {
+		return nil, errors.DatabaseErrWithErr(err, "load messages for compact failed")
+	}
+	if len(activeMessages) == 0 {
+		return ToSessionDTO(session), nil
+	}
+
+	resp, result := s.llmExecutor.Chat(ctx, buildChatRequest(agent, []llm.Message{
+		{Role: "user", Content: buildSummaryPrompt(session.Summary, activeMessages)},
+	}))
+	if !result.Success {
+		return nil, errors.LLMErrWithErr(result.Error, "compact conversation context failed")
+	}
+
+	summary := strings.TrimSpace(resp.Content)
+	untilID := activeMessages[len(activeMessages)-1].ID
+	if err := s.sessionRepo.UpdateSummary(ctx, session.ID, summary, untilID); err != nil {
+		return nil, errors.DatabaseErrWithErr(err, "update compacted summary failed")
+	}
+	session.Summary = summary
+	session.SummarizedUntilMessageID = untilID
+	_ = s.refreshContextCache(ctx, session)
+	return ToSessionDTO(session), nil
+}
+
+func (s *CommandService) saveUserMessage(ctx context.Context, session *domain.ChatSession, content string) (*domain.ChatMessage, error) {
 	message := &domain.ChatMessage{
 		SessionID:  session.ID,
 		Role:       domain.MessageRoleUser,
@@ -258,19 +375,23 @@ func (s *CommandService) saveUserMessage(ctx context.Context, session *domain.Ch
 		Meta:       "{}",
 	}
 	if err := s.messageRepo.Create(ctx, message); err != nil {
-		return errors.DatabaseErrWithErr(err, "save user message failed")
+		return nil, errors.DatabaseErrWithErr(err, "save user message failed")
 	}
 	_ = s.refreshContextCache(ctx, session)
-	return nil
+	return message, nil
 }
 
 func (s *CommandService) saveAssistantMessage(ctx context.Context, session *domain.ChatSession, content string) (*domain.ChatMessage, error) {
+	return s.saveAssistantMessageWithMeta(ctx, session, content, "{}")
+}
+
+func (s *CommandService) saveAssistantMessageWithMeta(ctx context.Context, session *domain.ChatSession, content string, meta string) (*domain.ChatMessage, error) {
 	message := &domain.ChatMessage{
 		SessionID:  session.ID,
 		Role:       domain.MessageRoleAssistant,
 		Content:    content,
 		TokenCount: estimateTokens(content),
-		Meta:       "{}",
+		Meta:       normalizeJSON(meta),
 	}
 	if err := s.messageRepo.Create(ctx, message); err != nil {
 		return nil, errors.DatabaseErrWithErr(err, "save assistant message failed")
@@ -333,6 +454,21 @@ func (s *CommandService) buildModelMessages(ctx context.Context, session *domain
 		return nil, err
 	}
 	for _, message := range messages {
+		result = append(result, toLLMMessage(message))
+	}
+	return result, nil
+}
+
+func (s *CommandService) buildQueryHistoryMessages(ctx context.Context, session *domain.ChatSession, currentUserMessageID uint64) ([]llm.Message, error) {
+	messages, err := s.loadActiveContext(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]llm.Message, 0, len(messages))
+	for _, message := range messages {
+		if message.ID == currentUserMessageID {
+			continue
+		}
 		result = append(result, toLLMMessage(message))
 	}
 	return result, nil
@@ -454,6 +590,135 @@ func buildChatRequest(agent *AgentRuntimeDTO, messages []llm.Message) llm.ChatRe
 		req.TopP = &agent.TopP
 	}
 	return req
+}
+
+func optionalPositiveFloat(value float64) *float64 {
+	if value <= 0 {
+		return nil
+	}
+	return &value
+}
+
+type assistantTraceItem struct {
+	ID          int                    `json:"id"`
+	Title       string                 `json:"title"`
+	Content     string                 `json:"content"`
+	Level       string                 `json:"level"`
+	Iteration   int                    `json:"iteration,omitempty"`
+	Action      string                 `json:"action,omitempty"`
+	Reason      string                 `json:"reason,omitempty"`
+	ActionInput map[string]interface{} `json:"action_input,omitempty"`
+	Observation string                 `json:"observation,omitempty"`
+	IsError     bool                   `json:"is_error,omitempty"`
+}
+
+func buildAssistantMeta(result *query.QueryResult) string {
+	if result == nil || len(result.Steps) == 0 {
+		return "{}"
+	}
+	trace := make([]assistantTraceItem, 0, len(result.Steps))
+	for i, step := range result.Steps {
+		item := assistantTraceItem{
+			ID:          i + 1,
+			Title:       traceTitle(step),
+			Content:     traceContent(step),
+			Level:       traceLevel(step),
+			Iteration:   step.Iteration,
+			Action:      step.Name,
+			Observation: step.Content,
+			IsError:     step.IsError,
+		}
+		if step.Metadata != nil {
+			if reason, ok := step.Metadata["reason"].(string); ok {
+				item.Reason = reason
+			}
+			if action, ok := step.Metadata["action"].(string); ok && action != "" {
+				item.Action = action
+			}
+			if input, ok := step.Metadata["action_input"].(map[string]interface{}); ok {
+				item.ActionInput = input
+			}
+		}
+		trace = append(trace, item)
+	}
+	data, err := json.Marshal(map[string]interface{}{"trace": trace})
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
+}
+
+func traceTitle(step query.StepResult) string {
+	if step.IsError {
+		return "执行失败"
+	}
+	if step.Name == "final" {
+		return "最终回答"
+	}
+	if strings.TrimSpace(step.Name) != "" {
+		return "调用工具: " + step.Name
+	}
+	return "思考"
+}
+
+func traceContent(step query.StepResult) string {
+	if step.Metadata != nil {
+		if reason, ok := step.Metadata["reason"].(string); ok && strings.TrimSpace(reason) != "" {
+			return reason
+		}
+	}
+	if strings.TrimSpace(step.Content) != "" {
+		return truncateTraceText(step.Content)
+	}
+	return "模型完成了一步推理。"
+}
+
+func traceLevel(step query.StepResult) string {
+	if step.IsError {
+		return "danger"
+	}
+	if step.Name == "final" {
+		return "success"
+	}
+	return "info"
+}
+
+func truncateTraceText(text string) string {
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) <= 500 {
+		return string(runes)
+	}
+	return string(runes[:500]) + "..."
+}
+
+func completionMode(mode string) query.ExecutionMode {
+	switch strings.TrimSpace(mode) {
+	case query.ExecutionModeFixedWorkflow.String(), "workflow":
+		return query.ExecutionModeFixedWorkflow
+	case query.ExecutionModePlanGraph.String(), "plan_graph":
+		return query.ExecutionModePlanGraph
+	case query.ExecutionModePureReAct.String(), "react":
+		return query.ExecutionModePureReAct
+	default:
+		return query.ExecutionModeDirectChat
+	}
+}
+
+func staticAgentTools() []string {
+	tools := make([]string, len(staticAgentToolNames))
+	copy(tools, staticAgentToolNames)
+	return tools
+}
+
+func defaultWorkingDir() string {
+	if workspace := strings.TrimSpace(os.Getenv("LATTICE_WORKSPACE_DIR")); workspace != "" {
+		return workspace
+	}
+	wd, err := os.Getwd()
+	if err != nil || strings.TrimSpace(wd) == "" {
+		return "."
+	}
+	return wd
 }
 
 func buildSummaryPrompt(previous string, messages []*domain.ChatMessage) string {

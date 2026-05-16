@@ -1,15 +1,18 @@
 import { get, post, del } from './request'
-import type { Run, RunForm } from '@/types/run'
+import type { Run, RunForm, ToolInvocation } from '@/types/run'
 import type { PageResult, PageQuery } from '@/types/api'
 
 export const runApi = {
-  list: (params?: PageQuery) => get<PageResult<Run>>('/runs', { params }),
+  list: (params?: PageQuery) => get<PageResult<Run>>('/v1/runs', { params }),
 
-  get: (id: number) => get<Run>(`/runs/${id}`),
+  get: (id: string) => get<{ data: Run }>(`/v1/runs/${id}`).then((res) => res.data),
 
-  create: (data: RunForm) => post<{ runId: string }>('/runs', data),
+  listToolInvocations: (id: string) =>
+    get<{ data: ToolInvocation[] }>(`/v1/runs/${id}/tool-invocations`).then((res) => res.data || []),
 
-  cancel: (id: number) => post<void>(`/runs/${id}/cancel`),
+  create: (data: RunForm) => post<{ runId: string }>('/v1/runs', data),
 
-  delete: (id: number) => del<void>(`/runs/${id}`)
+  cancel: (id: string) => post<void>(`/v1/runs/${id}/cancel`),
+
+  delete: (id: string) => del<void>(`/v1/runs/${id}`)
 }

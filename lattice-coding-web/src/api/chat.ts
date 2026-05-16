@@ -43,7 +43,10 @@ export interface ChatCompletionPayload {
   agent_id?: number
   session_id?: number
   message: string
+  mode?: ChatExecutionMode
 }
+
+export type ChatExecutionMode = 'direct_chat' | 'fixed_workflow' | 'plan_graph' | 'pure_react'
 
 export interface ChatCompletionResult {
   session_id: number
@@ -62,8 +65,18 @@ export interface ChatMessageListQuery {
 
 export interface ChatStreamHandlers {
   onDelta?: (delta: string) => void
+  onEvent?: (event: ChatStreamEvent) => void
   onDone?: (result: ChatCompletionResult) => void
   onError?: (message: string) => void
+}
+
+export interface ChatStreamEvent {
+  type: string
+  run_id?: string
+  content?: string
+  done?: boolean
+  message?: string
+  metadata?: Record<string, any>
 }
 
 interface ApiPage<T> {
@@ -140,13 +153,27 @@ async function streamComplete(
       const parsed = parseSSEBlock(block)
       if (!parsed.data) continue
 
-      const payload = JSON.parse(parsed.data)
-      if (parsed.event === 'delta') {
-        handlers.onDelta?.(payload.delta || '')
-      } else if (parsed.event === 'done') {
-        doneResult = payload as ChatCompletionResult
+      const payload = JSON.parse(parsed.data) as ChatStreamEvent
+      handlers.onEvent?.(payload)
+      if (parsed.event === 'llm.delta') {
+        handlers.onDelta?.(payload.content || '')
+      } else if (parsed.event === 'run.finished') {
+        doneResult = {
+          session_id: Number(payload.metadata?.session_id || data.session_id || 0),
+          message: {
+            id: Number(payload.metadata?.message_id || 0),
+            session_id: Number(payload.metadata?.session_id || data.session_id || 0),
+            role: 'assistant',
+            content: payload.content || '',
+            token_count: 0,
+            meta: '{}',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          },
+          content: payload.content || ''
+        }
         handlers.onDone?.(doneResult)
-      } else if (parsed.event === 'error') {
+      } else if (parsed.event === 'run.error' || parsed.event === 'error') {
         const message = payload.message || 'stream error'
         handlers.onError?.(message)
         throw new Error(message)
@@ -178,6 +205,9 @@ export const chatApi = {
     post<{ data: ChatSession }>('/v1/chat/sessions', data).then((res) => res.data),
 
   deleteSession: (id: number) => del<void>(`/v1/chat/sessions/${id}`),
+
+  compactSession: (id: number) =>
+    post<{ data: ChatSession }>(`/v1/chat/sessions/${id}/compact`).then((res) => res.data),
 
   listMessages: (sessionId: number, params?: ChatMessageListQuery) =>
     get<{ data: ChatMessage[] }>(`/v1/chat/sessions/${sessionId}/messages`, { params }).then(

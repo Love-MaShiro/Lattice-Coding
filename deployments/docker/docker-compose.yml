@@ -70,6 +70,9 @@ services:
       - MYSQL_HOST=mysql
       - REDIS_HOST=redis
       - POSTGRES_HOST=postgres
+      - LATTICE_WORKSPACE_DIR=/workspace
+    volumes:
+      - ../../test_workspace:/workspace
 
 volumes:
   mysql_data:

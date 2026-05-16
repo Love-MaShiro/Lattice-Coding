@@ -11,6 +11,11 @@ type QueryStrategy interface {
 	Execute(ctx context.Context, state *QueryState) (*QueryResult, error)
 }
 
+type StreamStrategy interface {
+	QueryStrategy
+	Stream(ctx context.Context, state *QueryState) (QueryStream, error)
+}
+
 type RunBinder interface {
 	BindRun(ctx context.Context, req QueryRequest) (string, error)
 }
@@ -175,18 +180,56 @@ func (e *QueryEngine) Run(ctx context.Context, req QueryRequest) (*QueryResult, 
 }
 
 func (e *QueryEngine) Stream(ctx context.Context, req QueryRequest) (QueryStream, error) {
-	out := make(chan StreamResult, 8)
-	go func() {
-		defer close(out)
-		out <- StreamResult{Type: StreamEventStarted, RunID: req.RunID}
-		result, err := e.Run(ctx, req)
+	if e == nil {
+		return nil, ErrQueryFailed.WithMessage("query engine is nil")
+	}
+	if req.Input == "" {
+		return nil, ErrInvalidRequest.WithMessage("query input is required")
+	}
+	req.Stream = true
+	if req.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, req.Timeout)
+		_ = cancel
+	}
+
+	if e.runBinder != nil {
+		runID, err := e.runBinder.BindRun(ctx, req)
 		if err != nil {
-			out <- StreamResult{Type: StreamEventError, RunID: req.RunID, Err: err, Done: true}
-			return
+			return nil, errors.Join(ErrRunBindFailed, err)
 		}
-		out <- StreamResult{Type: StreamEventDone, RunID: result.RunID, Content: result.Content, Done: true, Metadata: result.Metadata}
-	}()
-	return out, nil
+		if runID != "" {
+			req.RunID = runID
+		}
+	}
+
+	if e.agentLoader != nil {
+		cfg, err := e.agentLoader.LoadAgentConfig(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		applyAgentConfig(&req, cfg)
+	}
+
+	if e.contextBuild != nil {
+		metadata, err := e.contextBuild.BuildContext(ctx, req)
+		if err != nil {
+			return nil, errors.Join(ErrContextBuildFailed, err)
+		}
+		req.Metadata = mergeMetadata(req.Metadata, metadata)
+	}
+
+	req.Mode = e.router.Route(req)
+	state := NewState(req)
+	strategy, ok := e.strategies[req.Mode]
+	if !ok {
+		return nil, ErrStrategyNotFound.WithMessage("query strategy not found: " + req.Mode.String())
+	}
+	streamStrategy, ok := strategy.(StreamStrategy)
+	if !ok {
+		return nil, ErrModeNotSupported.WithMessage("query stream not supported: " + req.Mode.String())
+	}
+	return streamStrategy.Stream(ctx, state)
 }
 
 func applyAgentConfig(req *QueryRequest, cfg *AgentConfig) {

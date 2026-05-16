@@ -2,94 +2,53 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
-
-	"lattice-coding/internal/modules/provider/domain"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
 type LLMFactory struct {
-	providerRepo       domain.ProviderRepository
-	providerHealthRepo domain.ProviderHealthRepository
-	modelConfigRepo    domain.ModelConfigRepository
+	resolver ModelConfigResolver
 }
 
-func NewLLMFactory(
-	providerRepo domain.ProviderRepository,
-	providerHealthRepo domain.ProviderHealthRepository,
-	modelConfigRepo domain.ModelConfigRepository,
-) *LLMFactory {
-	return &LLMFactory{
-		providerRepo:       providerRepo,
-		providerHealthRepo: providerHealthRepo,
-		modelConfigRepo:    modelConfigRepo,
+func NewLLMFactory(resolver ModelConfigResolver) *LLMFactory {
+	return &LLMFactory{resolver: resolver}
+}
+
+func (f *LLMFactory) ResolveModelConfig(ctx context.Context, modelConfigID uint64) (*ResolvedModelConfig, error) {
+	if f == nil || f.resolver == nil {
+		return nil, ErrNoProvider
 	}
-}
-
-func (f *LLMFactory) GetModelConfig(ctx context.Context, modelConfigID uint64) (*domain.ModelConfig, error) {
-	return f.modelConfigRepo.FindByID(ctx, modelConfigID)
-}
-
-func (f *LLMFactory) ListModelConfigs(ctx context.Context) ([]*domain.ModelConfig, error) {
-	result, err := f.modelConfigRepo.FindPage(ctx, &domain.PageRequest{Page: 1, PageSize: 100})
-	if err != nil {
-		return nil, err
-	}
-	return result.Items, nil
+	return f.resolver.ResolveModelConfig(ctx, strconv.FormatUint(modelConfigID, 10))
 }
 
 func (f *LLMFactory) CreateChatModel(ctx context.Context, modelConfigID uint64) (model.ChatModel, error) {
-	modelConfig, err := f.modelConfigRepo.FindByID(ctx, modelConfigID)
+	config, err := f.ResolveModelConfig(ctx, modelConfigID)
 	if err != nil {
 		return nil, err
 	}
+	return NewChatModelFromResolvedConfig(config)
+}
 
-	provider, err := f.providerRepo.FindByID(ctx, modelConfig.ProviderID)
-	if err != nil {
-		return nil, err
+func NewChatModelFromResolvedConfig(config *ResolvedModelConfig) (model.ChatModel, error) {
+	if config == nil {
+		return nil, ErrNoProvider
 	}
 
-	if !provider.Enabled {
-		return nil, ErrProviderDisabled
-	}
-
-	if !modelConfig.Enabled {
-		return nil, ErrModelConfigDisabled
-	}
-
-	authConfig := decodeAuthConfig(provider.AuthConfigCiphertext)
-
-	var apiKey string
-	if authConfig != nil {
-		apiKey = authConfig.APIKey
-	}
-
-	switch provider.ProviderType {
-	case domain.ProviderTypeOpenAI, domain.ProviderTypeOpenAICompatible:
-		return NewOpenAIChatModel(provider.BaseURL, apiKey, modelConfig.Model)
-	case domain.ProviderTypeOllama:
-		return NewOllamaChatModel(provider.BaseURL, modelConfig.Model)
-	case domain.ProviderTypeClaude:
+	switch config.ProviderType {
+	case "openai", "openai_compatible":
+		return NewOpenAIChatModel(config.BaseURL, config.APIKey, config.ModelName)
+	case "ollama":
+		return NewOllamaChatModel(config.BaseURL, config.ModelName)
+	case "claude":
 		return nil, ErrUnsupportedProviderType
 	default:
 		return nil, ErrUnsupportedProviderType
 	}
-}
-
-func decodeAuthConfig(ciphertext string) *domain.AuthConfigData {
-	if ciphertext == "" {
-		return nil
-	}
-	var config domain.AuthConfigData
-	if err := json.Unmarshal([]byte(ciphertext), &config); err != nil {
-		return nil
-	}
-	return &config
 }
 
 func (f *LLMFactory) TestModel(ctx context.Context, modelConfigID uint64) (*HealthCheckResult, error) {
@@ -97,25 +56,26 @@ func (f *LLMFactory) TestModel(ctx context.Context, modelConfigID uint64) (*Heal
 }
 
 func (f *LLMFactory) testModelWithTimeout(ctx context.Context, modelConfigID uint64, timeout time.Duration) (*HealthCheckResult, error) {
-	modelConfig, err := f.modelConfigRepo.FindByID(ctx, modelConfigID)
+	config, err := f.ResolveModelConfig(ctx, modelConfigID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider, err := f.providerRepo.FindByID(ctx, modelConfig.ProviderID)
-	if err != nil {
-		return nil, err
+	providerID, _ := strconv.ParseUint(config.ProviderID, 10, 64)
+	resolvedModelConfigID, _ := strconv.ParseUint(config.ModelConfigID, 10, 64)
+	if resolvedModelConfigID == 0 {
+		resolvedModelConfigID = modelConfigID
 	}
 
 	result := &HealthCheckResult{
-		ProviderID:    provider.ID,
-		ModelConfigID: modelConfigID,
+		ProviderID:    providerID,
+		ModelConfigID: resolvedModelConfigID,
 		CheckedAt:     time.Now(),
 	}
 
-	chatModel, err := f.CreateChatModel(ctx, modelConfigID)
+	chatModel, err := NewChatModelFromResolvedConfig(config)
 	if err != nil {
-		result.HealthStatus = string(domain.HealthStatusUnhealthy)
+		result.HealthStatus = "unhealthy"
 		result.ErrorMessage = summarizeError(err)
 		return result, nil
 	}
@@ -125,18 +85,17 @@ func (f *LLMFactory) testModelWithTimeout(ctx context.Context, modelConfigID uin
 
 	startTime := time.Now()
 	_, err = chatModel.Generate(testCtx, []*schema.Message{
-		{Role: schema.User, Content: "请只回复 OK"},
+		{Role: schema.User, Content: "Please reply OK"},
 	})
-	latency := time.Since(startTime).Milliseconds()
-	result.LatencyMs = latency
+	result.LatencyMs = time.Since(startTime).Milliseconds()
 
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			result.HealthStatus = string(domain.HealthStatusUnhealthy)
+			result.HealthStatus = "unhealthy"
 			result.ErrorCode = "TIMEOUT"
-			result.ErrorMessage = "请求超时"
+			result.ErrorMessage = "request timeout"
 		} else {
-			result.HealthStatus = string(domain.HealthStatusUnhealthy)
+			result.HealthStatus = "unhealthy"
 			result.ErrorCode = "CALL_ERROR"
 			result.ErrorMessage = summarizeError(err)
 		}
@@ -144,7 +103,7 @@ func (f *LLMFactory) testModelWithTimeout(ctx context.Context, modelConfigID uin
 	}
 
 	result.Success = true
-	result.HealthStatus = string(domain.HealthStatusHealthy)
+	result.HealthStatus = "healthy"
 	return result, nil
 }
 
@@ -153,39 +112,25 @@ func (f *LLMFactory) TestProvider(ctx context.Context, providerID uint64) (*Heal
 }
 
 func (f *LLMFactory) testProviderWithTimeout(ctx context.Context, providerID uint64, timeout time.Duration) (*HealthCheckResult, error) {
-	modelConfigs, err := f.modelConfigRepo.FindByProviderID(ctx, providerID)
-	if err != nil {
-		return nil, err
+	if f == nil || f.resolver == nil {
+		return nil, ErrNoProvider
 	}
-	if len(modelConfigs) == 0 {
+
+	providerResolver, ok := f.resolver.(ProviderDefaultModelResolver)
+	if !ok {
 		return nil, ErrNoModelConfigFound
 	}
 
-	result := &HealthCheckResult{
-		ProviderID: providerID,
-		CheckedAt:  time.Now(),
+	config, err := providerResolver.ResolveProviderDefaultModel(ctx, strconv.FormatUint(providerID, 10))
+	if err != nil {
+		return nil, err
 	}
 
-	var lastErr error
-	for _, mc := range modelConfigs {
-		if mc.Enabled {
-			modelResult, err := f.testModelWithTimeout(ctx, mc.ID, timeout)
-			if err != nil {
-				lastErr = err
-				continue
-			}
-			modelResult.ProviderID = providerID
-			return modelResult, nil
-		}
+	modelConfigID, _ := strconv.ParseUint(config.ModelConfigID, 10, 64)
+	if modelConfigID == 0 {
+		return nil, ErrNoModelConfigFound
 	}
-
-	result.HealthStatus = string(domain.HealthStatusUnhealthy)
-	result.ErrorCode = "NO_AVAILABLE_MODEL"
-	result.ErrorMessage = "无可用的模型配置"
-	if lastErr != nil {
-		result.ErrorMessage = summarizeError(lastErr)
-	}
-	return result, nil
+	return f.testModelWithTimeout(ctx, modelConfigID, timeout)
 }
 
 func summarizeError(err error) string {
@@ -195,19 +140,19 @@ func summarizeError(err error) string {
 	msg := err.Error()
 
 	if strings.Contains(msg, "context deadline exceeded") || strings.Contains(msg, "Timeout") {
-		return "请求超时"
+		return "request timeout"
 	}
 	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "connect: connection refused") {
-		return "连接被拒绝"
+		return "connection refused"
 	}
 	if strings.Contains(msg, "authentication") || strings.Contains(msg, "unauthorized") || strings.Contains(msg, "401") {
-		return "认证失败"
+		return "authentication failed"
 	}
 	if strings.Contains(msg, "rate limit") || strings.Contains(msg, "429") {
-		return "请求频率超限"
+		return "rate limit exceeded"
 	}
 	if strings.Contains(msg, "500") || strings.Contains(msg, "502") || strings.Contains(msg, "503") {
-		return "服务端错误"
+		return "server error"
 	}
 
 	if len(msg) > 100 {

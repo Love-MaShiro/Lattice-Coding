@@ -28,6 +28,7 @@ type Module struct {
 	HealthCheckService *application.HealthCheckService
 	SyncService        *application.SyncService
 	LLMFactory         *llm.LLMFactory
+	modelResolver      llm.ModelConfigResolver
 	Handler            *api.Handler
 }
 
@@ -43,7 +44,8 @@ func NewModule(p *ModuleProvider) *Module {
 	modelConfigRepo := persistence.NewModelConfigRepositoryImpl(p.DB)
 	healthRepo := persistence.NewProviderHealthRepositoryImpl(p.DB)
 
-	llmFactory := llm.NewLLMFactory(providerRepo, healthRepo, modelConfigRepo)
+	modelResolver := application.NewModelConfigResolver(providerRepo, modelConfigRepo, encryptor)
+	llmFactory := llm.NewLLMFactory(modelResolver)
 	modelLister := llm.NewModelLister()
 
 	cmdSvc := application.NewCommandService(
@@ -91,8 +93,13 @@ func NewModule(p *ModuleProvider) *Module {
 		HealthCheckService: healthCheckSvc,
 		SyncService:        syncSvc,
 		LLMFactory:         llmFactory,
+		modelResolver:      modelResolver,
 		Handler:            handler,
 	}
+}
+
+func (m *Module) ModelConfigResolver() llm.ModelConfigResolver {
+	return m.modelResolver
 }
 
 func RegisterRoutes(group *gin.RouterGroup, m *Module) {

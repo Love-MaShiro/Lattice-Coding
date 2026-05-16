@@ -120,7 +120,10 @@ func (s *reactStrategy) Execute(ctx context.Context, req Request) (*Result, erro
 		}
 
 		if state.toolCalls >= maxToolCalls {
-			return nil, errors.New("react max tool calls reached")
+			step := errorStep(iteration, "react", "max tool calls reached", errors.New("react max tool calls reached"))
+			state.appendStep(step)
+			_ = scratchpad.Append(ctx, step)
+			return reactFailureResult(req, "未能完成请求：ReAct 已达到工具调用上限。请查看工具调用轨迹了解失败原因。", state.steps), nil
 		}
 
 		step := s.executeToolCall(ctx, req, iteration, action, allowed)
@@ -130,7 +133,26 @@ func (s *reactStrategy) Execute(ctx context.Context, req Request) (*Result, erro
 		}
 	}
 
-	return nil, errors.New("react max iterations reached")
+	step := errorStep(maxIterations, "react", "max iterations reached", errors.New("react max iterations reached"))
+	state.appendStep(step)
+	_ = scratchpad.Append(ctx, step)
+	return reactFailureResult(req, "未能完成请求：ReAct 已达到最大迭代次数。请查看工具调用轨迹了解失败原因。", state.steps), nil
+}
+
+func reactFailureResult(req Request, answer string, steps []ReActStep) *Result {
+	return &Result{
+		RunID:   req.RunID,
+		Content: answer,
+		Messages: []Message{
+			{Role: "user", Content: req.Input},
+			{Role: "assistant", Content: answer},
+		},
+		Metadata: map[string]interface{}{
+			"strategy":    StrategyReAct,
+			"react_steps": steps,
+			"is_error":    true,
+		},
+	}
 }
 
 func (s *reactStrategy) executeToolCall(ctx context.Context, req Request, iteration int, action *ReActAction, allowed map[string]struct{}) ReActStep {

@@ -16,7 +16,7 @@ type Executor struct {
 	breaker        *CircuitBreaker
 	router         *Router
 	clientRegistry *ClientRegistry
-	modelFactory   *LLMFactory
+	modelResolver  ModelConfigResolver
 	mu             sync.RWMutex
 }
 
@@ -76,10 +76,14 @@ func (e *Executor) RegisterClient(name string, client LLMClient) {
 	e.clientRegistry.Register(name, client)
 }
 
-func (e *Executor) SetModelFactory(factory *LLMFactory) {
+func (e *Executor) Call(ctx context.Context, req ChatRequest) (*ChatResponse, CallResult) {
+	return e.Chat(ctx, req)
+}
+
+func (e *Executor) SetModelConfigResolver(resolver ModelConfigResolver) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.modelFactory = factory
+	e.modelResolver = resolver
 }
 
 func (e *Executor) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, CallResult) {
@@ -195,13 +199,13 @@ func (e *Executor) prepareRequest(req ChatRequest) (ChatRequest, error) {
 	}
 
 	e.mu.RLock()
-	factory := e.modelFactory
+	resolver := e.modelResolver
 	e.mu.RUnlock()
-	if factory == nil {
+	if resolver == nil {
 		return req, ErrNoProvider
 	}
 
-	e.clientRegistry.Register(name, NewEinoModelClient(factory, req.ModelConfigID))
+	e.clientRegistry.Register(name, NewEinoModelClient(NewLLMFactory(resolver), req.ModelConfigID))
 	req.Provider = name
 	return req, nil
 }

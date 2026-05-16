@@ -7,6 +7,7 @@ import (
 	"lattice-coding/internal/common/handler"
 	"lattice-coding/internal/common/response"
 	"lattice-coding/internal/modules/chat/application"
+	"lattice-coding/internal/runtime/query"
 
 	"github.com/gin-gonic/gin"
 )
@@ -96,6 +97,24 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	response.Ok[any](c, nil)
 }
 
+func (h *Handler) CompactSession(c *gin.Context) {
+	id, err := parseUintParam(c, "id")
+	if err != nil {
+		handler.HandleError(c, err)
+		return
+	}
+
+	result, err := h.cmdSvc.CompactSession(c.Request.Context(), &application.CompactSessionCommand{
+		SessionID: id,
+	})
+	if err != nil {
+		handler.HandleError(c, err)
+		return
+	}
+
+	response.Ok(c, ToSessionResponse(result))
+}
+
 func (h *Handler) ListMessages(c *gin.Context) {
 	sessionID, err := parseUintParam(c, "id")
 	if err != nil {
@@ -166,8 +185,20 @@ func (h *Handler) CreateChatStream(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(200)
 
-	result, err := h.cmdSvc.StreamComplete(c.Request.Context(), ToCompletionCommand(&req), func(delta string) error {
-		c.SSEvent("delta", gin.H{"delta": delta})
+	_, err := h.cmdSvc.StreamComplete(c.Request.Context(), ToCompletionCommand(&req), func(event query.StreamEvent) error {
+		payload := gin.H{
+			"type":    event.Type,
+			"run_id":  event.RunID,
+			"content": event.Content,
+			"done":    event.Done,
+		}
+		if event.Err != nil {
+			payload["message"] = event.Err.Error()
+		}
+		if event.Metadata != nil {
+			payload["metadata"] = event.Metadata
+		}
+		c.SSEvent(string(event.Type), payload)
 		c.Writer.Flush()
 		return nil
 	})
@@ -176,9 +207,6 @@ func (h *Handler) CreateChatStream(c *gin.Context) {
 		c.Writer.Flush()
 		return
 	}
-
-	c.SSEvent("done", ToCompletionResponse(result))
-	c.Writer.Flush()
 }
 
 func parseUintParam(c *gin.Context, name string) (uint64, error) {

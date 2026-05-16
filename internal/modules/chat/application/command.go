@@ -22,4 +22,9 @@ type CompletionCommand struct {
 	AgentID   uint64 `json:"agent_id"`
 	SessionID uint64 `json:"session_id"`
 	Message   string `json:"message"`
+	Mode      string `json:"mode"`
+}
+
+type CompactSessionCommand struct {
+	SessionID uint64 `json:"session_id"`
 }

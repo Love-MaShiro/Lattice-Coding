@@ -67,12 +67,13 @@ func (s *PureReActStrategy) Execute(ctx context.Context, state *query.QueryState
 	}
 
 	return &query.QueryResult{
-		RunID:    state.RunID,
-		Mode:     query.ExecutionModePureReAct,
-		Content:  result.Content,
-		Messages: queryMessages(result.Messages),
-		Steps:    state.Steps,
-		Metadata: result.Metadata,
+		RunID:       state.RunID,
+		Mode:        query.ExecutionModePureReAct,
+		Content:     result.Content,
+		FinalAnswer: result.Content,
+		Messages:    queryMessages(result.Messages),
+		Steps:       state.Steps,
+		Metadata:    result.Metadata,
 	}, nil
 }
 

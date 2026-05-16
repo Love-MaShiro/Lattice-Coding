@@ -9,6 +9,7 @@ func RegisterRoutes(api *gin.RouterGroup, h *Handler) {
 		chat.GET("/sessions", h.ListSessions)
 		chat.GET("/sessions/:id", h.GetSession)
 		chat.DELETE("/sessions/:id", h.DeleteSession)
+		chat.POST("/sessions/:id/compact", h.CompactSession)
 		chat.GET("/sessions/:id/messages", h.ListMessages)
 		chat.POST("/messages", h.CreateMessage)
 		chat.POST("/completions", h.CreateChatCompletion)

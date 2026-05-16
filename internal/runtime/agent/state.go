@@ -60,7 +60,7 @@ type state struct {
 
 func (s *state) appendStep(step ReActStep) {
 	s.steps = append(s.steps, step)
-	if step.Action != "" && !step.IsError {
+	if step.Action != "" && step.Action != ReActActionFinal && step.Action != "parse_react_action" {
 		s.toolCalls++
 	}
 }

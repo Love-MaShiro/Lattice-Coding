@@ -3,16 +3,22 @@ package query
 type StreamEventType string
 
 const (
-	StreamEventStarted StreamEventType = "started"
-	StreamEventDelta   StreamEventType = "delta"
+	StreamEventRunStarted  StreamEventType = "run.started"
+	StreamEventLLMDelta    StreamEventType = "llm.delta"
+	StreamEventLLMDone     StreamEventType = "llm.done"
+	StreamEventRunFinished StreamEventType = "run.finished"
+	StreamEventRunError    StreamEventType = "run.error"
+
+	StreamEventStarted                 = StreamEventRunStarted
+	StreamEventDelta                   = StreamEventLLMDelta
+	StreamEventDone                    = StreamEventLLMDone
+	StreamEventError                   = StreamEventRunError
 	StreamEventStep    StreamEventType = "step"
-	StreamEventDone    StreamEventType = "done"
-	StreamEventError   StreamEventType = "error"
 )
 
-type QueryStream <-chan StreamResult
+type QueryStream <-chan StreamEvent
 
-type StreamResult struct {
+type StreamEvent struct {
 	Type     StreamEventType
 	RunID    string
 	Content  string
@@ -21,3 +27,5 @@ type StreamResult struct {
 	Err      error
 	Metadata map[string]interface{}
 }
+
+type StreamResult = StreamEvent

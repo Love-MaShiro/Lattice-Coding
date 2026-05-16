@@ -67,11 +67,18 @@
               class="message-row"
               :class="message.role"
             >
-              <div class="message-bubble">
+              <div
+                class="message-bubble"
+                :class="{ pending: message.role === 'assistant' && !message.content && sending }"
+              >
                 <div class="message-role">{{ roleLabel(message.role) }}</div>
                 <div class="message-content">
-                  <span v-if="message.content">{{ message.content }}</span>
-                  <span v-else-if="message.role === 'assistant' && sending" class="typing-dot">正在思考</span>
+                  <div v-if="message.content" class="markdown-body" v-html="renderMarkdown(message.content)" />
+                  <span v-else-if="message.role === 'assistant' && sending" class="typing-indicator" aria-label="正在思考">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
                 </div>
                 <div class="message-time">{{ formatTime(message.created_at) }}</div>
               </div>
@@ -110,6 +117,7 @@ import { agentApi } from '@/api/agent'
 import { chatApi, type ChatMessage, type ChatSession } from '@/api/chat'
 import PageContainer from '@/components/PageContainer.vue'
 import type { Agent } from '@/types/agent'
+import { renderMarkdown } from '@/utils/markdown'
 import { notifyError, notifySuccess, notifyWarning } from '@/utils/notify'
 
 const agentLoading = ref(false)
@@ -445,7 +453,7 @@ onMounted(async () => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-card);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }
 
 .message-title {
@@ -460,39 +468,58 @@ onMounted(async () => {
 .message-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px;
+  gap: 18px;
+  padding: 24px 28px 28px;
 }
 
 .message-row {
   display: flex;
   justify-content: flex-start;
+  padding-right: 18%;
 }
 
 .message-row.user {
   justify-content: flex-end;
+  padding-right: 0;
+  padding-left: 18%;
 }
 
 .message-bubble {
-  max-width: min(720px, 78%);
+  max-width: min(760px, 100%);
+  min-width: 96px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-bg-secondary);
+  gap: 9px;
+  padding: 13px 16px 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px 14px 14px 4px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 0.06);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.message-row.assistant .message-bubble {
+  background: #f8fafc;
+  border-color: #dbe3ef;
 }
 
 .message-row.user .message-bubble {
   color: #fff;
   border-color: var(--el-color-primary);
+  border-radius: 14px 14px 4px 14px;
   background: var(--el-color-primary);
+  box-shadow: 0 12px 26px rgb(64 158 255 / 0.22);
+}
+
+.message-bubble.pending {
+  min-width: 112px;
+  min-height: 72px;
+  justify-content: center;
 }
 
 .message-row.user .message-time,
 .message-row.user .message-role {
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .message-role {
@@ -505,16 +532,126 @@ onMounted(async () => {
   min-height: 24px;
   color: inherit;
   font-size: 14px;
-  line-height: 1.7;
-  white-space: pre-wrap;
+  line-height: 1.72;
   overflow-wrap: anywhere;
 }
 
-.typing-dot::after {
-  display: inline-block;
-  width: 20px;
-  content: '...';
-  animation: typing-pulse 1s infinite steps(3, end);
+.markdown-body :deep(*) {
+  margin-top: 0;
+}
+
+.markdown-body :deep(*:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(p) {
+  margin-bottom: 10px;
+  white-space: normal;
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  margin-bottom: 8px;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin-bottom: 10px;
+  padding-left: 20px;
+}
+
+.markdown-body :deep(li + li) {
+  margin-top: 4px;
+}
+
+.markdown-body :deep(blockquote) {
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-left: 3px solid #cbd5e1;
+  color: var(--color-text-secondary);
+  background: rgb(241 245 249 / 0.7);
+  border-radius: 0 8px 8px 0;
+}
+
+.markdown-body :deep(code) {
+  padding: 2px 5px;
+  border-radius: 5px;
+  color: #be123c;
+  background: rgb(15 23 42 / 0.06);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+}
+
+.markdown-body :deep(pre) {
+  margin-bottom: 10px;
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: #0f172a;
+}
+
+.markdown-body :deep(pre code) {
+  display: block;
+  padding: 0;
+  color: #e2e8f0;
+  background: transparent;
+  white-space: pre;
+}
+
+.markdown-body :deep(a) {
+  color: var(--el-color-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.message-row.user .markdown-body :deep(blockquote) {
+  border-left-color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.message-row.user .markdown-body :deep(code) {
+  color: #fde68a;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.message-row.user .markdown-body :deep(a) {
+  color: #bfdbfe;
+}
+
+.typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+}
+
+.typing-indicator span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-text-tertiary);
+  animation: typing-bounce 1.05s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.28s;
 }
 
 .composer {
@@ -536,10 +673,16 @@ onMounted(async () => {
   height: 78px;
 }
 
-@keyframes typing-pulse {
-  0% { opacity: 0.35; }
-  50% { opacity: 1; }
-  100% { opacity: 0.35; }
+@keyframes typing-bounce {
+  0%, 80%, 100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  40% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
 }
 
 @media (max-width: 900px) {
@@ -554,7 +697,19 @@ onMounted(async () => {
   }
 
   .message-bubble {
-    max-width: 88%;
+    max-width: 100%;
+  }
+
+  .message-list {
+    padding: 18px 14px 20px;
+  }
+
+  .message-row {
+    padding-right: 8%;
+  }
+
+  .message-row.user {
+    padding-left: 8%;
   }
 
   .composer {

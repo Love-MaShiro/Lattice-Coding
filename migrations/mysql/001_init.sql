@@ -1,52 +1,83 @@
-CREATE TABLE IF NOT EXISTS provider (
+CREATE TABLE IF NOT EXISTS providers (
     id BIGINT NOT NULL AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
     provider_type VARCHAR(50) NOT NULL,
-    base_url VARCHAR(500),
-    api_key_ciphertext VARCHAR(1024),
-    config JSON,
+    base_url VARCHAR(255),
+    auth_type VARCHAR(50) NOT NULL DEFAULT 'api_key',
+    api_key_ciphertext TEXT,
+    auth_config_ciphertext TEXT,
+    config TEXT,
     enabled TINYINT NOT NULL DEFAULT 1,
+    health_status VARCHAR(20) NOT NULL DEFAULT 'unknown',
+    last_checked_at DATETIME(3),
+    last_error TEXT,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-    deleted TINYINT NOT NULL DEFAULT 0,
+    deleted_at DATETIME(3) DEFAULT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_provider_name (name, deleted),
-    KEY idx_provider_type (provider_type, deleted),
-    KEY idx_provider_enabled (enabled, deleted)
+    KEY idx_provider_name (name),
+    KEY idx_provider_type (provider_type),
+    KEY idx_provider_enabled (enabled),
+    KEY idx_provider_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS model_config (
+CREATE TABLE IF NOT EXISTS model_configs (
     id BIGINT NOT NULL AUTO_INCREMENT,
     provider_id BIGINT NOT NULL,
     name VARCHAR(100) NOT NULL,
     model VARCHAR(100) NOT NULL,
-    model_type VARCHAR(30) NOT NULL DEFAULT 'chat',
-    params JSON,
+    model_type VARCHAR(50) NOT NULL DEFAULT 'chat',
+    params TEXT,
+    capabilities TEXT,
+    is_default TINYINT NOT NULL DEFAULT 0,
     enabled TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-    deleted TINYINT NOT NULL DEFAULT 0,
+    deleted_at DATETIME(3) DEFAULT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_model_config (provider_id, name, deleted),
-    KEY idx_model_config_provider (provider_id, deleted),
-    KEY idx_model_config_model (model, deleted)
+    KEY idx_model_config_provider (provider_id),
+    KEY idx_model_config_model (model),
+    KEY idx_model_config_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS agent (
+CREATE TABLE IF NOT EXISTS provider_healths (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    provider_id BIGINT NOT NULL,
+    model_config_id BIGINT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'unknown',
+    latency_ms BIGINT NOT NULL DEFAULT 0,
+    error_code VARCHAR(50),
+    error_message TEXT,
+    checked_at DATETIME(3) NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    KEY idx_provider_health_provider (provider_id),
+    KEY idx_provider_health_model_config (model_config_id),
+    KEY idx_provider_health_checked_at (checked_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS agents (
     id BIGINT NOT NULL AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
     description TEXT,
+    agent_type VARCHAR(50) NOT NULL DEFAULT 'customer_service',
     model_config_id BIGINT NOT NULL,
     system_prompt TEXT,
-    settings JSON,
+    temperature DECIMAL(3,2) NOT NULL DEFAULT 0.70,
+    top_p DECIMAL(3,2) NOT NULL DEFAULT 1.00,
+    max_tokens INT NOT NULL DEFAULT 4096,
+    max_context_turns INT NOT NULL DEFAULT 10,
+    max_steps INT NOT NULL DEFAULT 20,
     enabled TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-    deleted TINYINT NOT NULL DEFAULT 0,
+    deleted_at DATETIME(3) DEFAULT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_agent_name (name, deleted),
-    KEY idx_agent_model_config (model_config_id, deleted),
-    KEY idx_agent_enabled (enabled, deleted)
+    KEY idx_agent_name (name),
+    KEY idx_agent_type (agent_type),
+    KEY idx_agent_model_config (model_config_id),
+    KEY idx_agent_enabled (enabled),
+    KEY idx_agent_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS agent_tool (

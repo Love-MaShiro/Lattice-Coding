@@ -2,9 +2,9 @@
 -- Agent 配置管理模块
 
 DROP TABLE IF EXISTS agent_tool;
-DROP TABLE IF EXISTS agent;
+DROP TABLE IF EXISTS agents;
 
-CREATE TABLE agent (
+CREATE TABLE agents (
     id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     name             VARCHAR(100) NOT NULL,
     description      TEXT,

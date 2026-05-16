@@ -13,13 +13,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-var (
-	ErrUnsupportedProviderType = errors.New("unsupported provider type")
-	ErrProviderDisabled        = errors.New("provider is disabled")
-	ErrModelConfigDisabled     = errors.New("model config is disabled")
-	ErrNoModelConfigFound      = errors.New("no model config found")
-)
-
 type LLMFactory struct {
 	providerRepo       domain.ProviderRepository
 	providerHealthRepo domain.ProviderHealthRepository

@@ -16,6 +16,7 @@ type Executor struct {
 	breaker        *CircuitBreaker
 	router         *Router
 	clientRegistry *ClientRegistry
+	modelFactory   *LLMFactory
 	mu             sync.RWMutex
 }
 
@@ -30,12 +31,12 @@ func NewExecutor(cfg *config.LLMConfig) *Executor {
 	streamCfg := cfg.Stream
 
 	executor := &Executor{
-		pool: NewSemaphorePool(poolCfg.MaxConcurrent),
+		pool:       NewSemaphorePool(poolCfg.MaxConcurrent),
 		streamPool: NewSemaphorePool(streamCfg.MaxConcurrent),
 		retryCfg: RetryConfig{
 			MaxAttempts:     2,
 			InitialInterval: 500 * time.Millisecond,
-			MaxInterval:    5 * time.Second,
+			MaxInterval:     5 * time.Second,
 		},
 		timeoutCfg: TimeoutConfig{
 			SyncCall:    60 * time.Second,
@@ -44,11 +45,12 @@ func NewExecutor(cfg *config.LLMConfig) *Executor {
 		},
 		clientRegistry: NewClientRegistry(),
 	}
+	executor.router = NewRouter(executor.clientRegistry, RouterConfig{})
 
 	if cfg.CircuitBreaker.Enabled {
 		breakerCfg := BreakerConfig{
-			Name:                  "llm",
-			FailureRateThreshold:  cfg.CircuitBreaker.FailureRateThreshold,
+			Name:                 "llm",
+			FailureRateThreshold: cfg.CircuitBreaker.FailureRateThreshold,
 			SlowCallThreshold:    30 * time.Second,
 			Window:               60 * time.Second,
 			OpenDuration:         30 * time.Second,
@@ -74,7 +76,24 @@ func (e *Executor) RegisterClient(name string, client LLMClient) {
 	e.clientRegistry.Register(name, client)
 }
 
+func (e *Executor) SetModelFactory(factory *LLMFactory) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.modelFactory = factory
+}
+
 func (e *Executor) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, CallResult) {
+	preparedReq, err := e.prepareRequest(req)
+	if err != nil {
+		return nil, CallResult{
+			Provider: req.Provider,
+			Model:    req.Model,
+			Success:  false,
+			Error:    err,
+		}
+	}
+	req = preparedReq
+
 	if err := e.pool.Acquire(ctx, 3*time.Second); err != nil {
 		return nil, CallResult{
 			Success: false,
@@ -108,6 +127,17 @@ func (e *Executor) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, Ca
 }
 
 func (e *Executor) Stream(ctx context.Context, req ChatRequest) (<-chan StreamChunk, CallResult) {
+	preparedReq, err := e.prepareRequest(req)
+	if err != nil {
+		return nil, CallResult{
+			Provider: req.Provider,
+			Model:    req.Model,
+			Success:  false,
+			Error:    err,
+		}
+	}
+	req = preparedReq
+
 	if err := e.streamPool.Acquire(ctx, 3*time.Second); err != nil {
 		return nil, CallResult{
 			Success: false,
@@ -151,6 +181,29 @@ func (e *Executor) Stream(ctx context.Context, req ChatRequest) (<-chan StreamCh
 	}()
 
 	return out, CallResult{Success: true}
+}
+
+func (e *Executor) prepareRequest(req ChatRequest) (ChatRequest, error) {
+	if req.Provider != "" || req.ModelConfigID == 0 {
+		return req, nil
+	}
+
+	name := ModelConfigClientName(req.ModelConfigID)
+	if _, ok := e.clientRegistry.Get(name); ok {
+		req.Provider = name
+		return req, nil
+	}
+
+	e.mu.RLock()
+	factory := e.modelFactory
+	e.mu.RUnlock()
+	if factory == nil {
+		return req, ErrNoProvider
+	}
+
+	e.clientRegistry.Register(name, NewEinoModelClient(factory, req.ModelConfigID))
+	req.Provider = name
+	return req, nil
 }
 
 func (e *Executor) Stats() ExecutorStats {

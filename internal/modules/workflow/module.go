@@ -1,27 +1,56 @@
 package workflow
 
-import "github.com/gin-gonic/gin"
+import (
+	rundomain "lattice-coding/internal/modules/run/domain"
+	"lattice-coding/internal/modules/workflow/api"
+	"lattice-coding/internal/modules/workflow/application"
+	"lattice-coding/internal/modules/workflow/domain"
+	"lattice-coding/internal/modules/workflow/infra/persistence"
+	"lattice-coding/internal/runtime/llm"
+	runtimetool "lattice-coding/internal/runtime/tool"
 
-func RegisterRoutes(api *gin.RouterGroup) {
-	r := api.Group("/v1/workflows")
-	{
-		r.GET("", listWorkflows)
-		r.GET("/:id", getWorkflow)
-		r.POST("", createWorkflow)
-		r.PUT("/:id", updateWorkflow)
-		r.DELETE("/:id", deleteWorkflow)
-		r.POST("/:id/start", startWorkflow)
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+type ModuleProvider struct {
+	DB            *gorm.DB
+	RunRepo       rundomain.RunRepository
+	LLMExecutor   *llm.Executor
+	ToolExecutor  *runtimetool.ToolExecutor
+	AuditRecorder runtimetool.AuditRecorder
+}
+
+type Module struct {
+	WorkflowRepo  domain.WorkflowRepository
+	NodeRegistry  *application.NodeRegistry
+	CommandSvc    *application.CommandService
+	QuerySvc      *application.QueryService
+	CodeReviewSvc *application.CodeReviewService
+	Handler       *api.Handler
+}
+
+func NewModule(p *ModuleProvider) *Module {
+	_ = persistence.Migrate(p.DB)
+
+	parser := domain.NewJSONNodeConfigParser()
+	workflowRepo := persistence.NewWorkflowRepositoryImpl(p.DB, parser)
+	nodeRegistry := application.NewNodeRegistry()
+	commandSvc := application.NewCommandService(workflowRepo, parser)
+	querySvc := application.NewQueryService(workflowRepo)
+	codeReviewSvc := application.NewCodeReviewService(p.RunRepo, p.ToolExecutor, p.LLMExecutor, p.AuditRecorder)
+	handler := api.NewHandler(commandSvc, querySvc, codeReviewSvc)
+
+	return &Module{
+		WorkflowRepo:  workflowRepo,
+		NodeRegistry:  nodeRegistry,
+		CommandSvc:    commandSvc,
+		QuerySvc:      querySvc,
+		CodeReviewSvc: codeReviewSvc,
+		Handler:       handler,
 	}
 }
 
-func listWorkflows(c *gin.Context) {}
-
-func getWorkflow(c *gin.Context) {}
-
-func createWorkflow(c *gin.Context) {}
-
-func updateWorkflow(c *gin.Context) {}
-
-func deleteWorkflow(c *gin.Context) {}
-
-func startWorkflow(c *gin.Context) {}
+func RegisterRoutes(group *gin.RouterGroup, m *Module) {
+	api.RegisterRoutes(group, m.Handler)
+}

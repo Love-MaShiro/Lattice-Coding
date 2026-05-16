@@ -10,14 +10,14 @@ import (
 type RetryConfig struct {
 	MaxAttempts     int
 	InitialInterval time.Duration
-	MaxInterval    time.Duration
+	MaxInterval     time.Duration
 }
 
 func NewRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxAttempts:     2,
 		InitialInterval: 500 * time.Millisecond,
-		MaxInterval:    5 * time.Second,
+		MaxInterval:     5 * time.Second,
 	}
 }
 

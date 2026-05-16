@@ -3,24 +3,17 @@ package application
 import (
 	"context"
 	stderrors "errors"
-	"io"
 	"strings"
 	"time"
 
 	"lattice-coding/internal/common/errors"
 	redisutil "lattice-coding/internal/common/redis"
 	"lattice-coding/internal/modules/chat/domain"
-
-	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/schema"
+	"lattice-coding/internal/runtime/llm"
 )
 
 type AgentGetter interface {
 	GetAgentForChat(ctx context.Context, id uint64) (*AgentRuntimeDTO, error)
-}
-
-type ChatModelFactory interface {
-	CreateChatModel(ctx context.Context, modelConfigID uint64) (model.ChatModel, error)
 }
 
 type MemoryConfig struct {
@@ -33,7 +26,7 @@ type CommandService struct {
 	sessionRepo  domain.SessionRepository
 	messageRepo  domain.MessageRepository
 	agentGetter  AgentGetter
-	modelFactory ChatModelFactory
+	llmExecutor  *llm.Executor
 	redisClient  *redisutil.Client
 	memoryConfig MemoryConfig
 }
@@ -42,7 +35,7 @@ func NewCommandService(
 	sessionRepo domain.SessionRepository,
 	messageRepo domain.MessageRepository,
 	agentGetter AgentGetter,
-	modelFactory ChatModelFactory,
+	llmExecutor *llm.Executor,
 	redisClient *redisutil.Client,
 	memoryConfig MemoryConfig,
 ) *CommandService {
@@ -51,7 +44,7 @@ func NewCommandService(
 		sessionRepo:  sessionRepo,
 		messageRepo:  messageRepo,
 		agentGetter:  agentGetter,
-		modelFactory: modelFactory,
+		llmExecutor:  llmExecutor,
 		redisClient:  redisClient,
 		memoryConfig: memoryConfig,
 	}
@@ -169,11 +162,7 @@ func (s *CommandService) Complete(ctx context.Context, cmd *CompletionCommand) (
 		return nil, err
 	}
 
-	modelClient, err := s.modelFactory.CreateChatModel(ctx, agent.ModelConfigID)
-	if err != nil {
-		return nil, errors.LLMErrWithErr(err, "create chat model failed")
-	}
-	if err := s.maybeSummarize(ctx, session, agent, modelClient); err != nil {
+	if err := s.maybeSummarize(ctx, session, agent); err != nil {
 		return nil, errors.LLMErrWithErr(err, "compress conversation context failed")
 	}
 
@@ -182,9 +171,9 @@ func (s *CommandService) Complete(ctx context.Context, cmd *CompletionCommand) (
 		return nil, err
 	}
 
-	resp, err := modelClient.Generate(ctx, messages, buildModelOptions(agent)...)
-	if err != nil {
-		return nil, errors.LLMErrWithErr(err, "model generate failed")
+	resp, result := s.llmExecutor.Chat(ctx, buildChatRequest(agent, messages))
+	if !result.Success {
+		return nil, errors.LLMErrWithErr(result.Error, "model generate failed")
 	}
 
 	assistantContent := strings.TrimSpace(resp.Content)
@@ -214,11 +203,7 @@ func (s *CommandService) StreamComplete(ctx context.Context, cmd *CompletionComm
 		return nil, err
 	}
 
-	modelClient, err := s.modelFactory.CreateChatModel(ctx, agent.ModelConfigID)
-	if err != nil {
-		return nil, errors.LLMErrWithErr(err, "create chat model failed")
-	}
-	if err := s.maybeSummarize(ctx, session, agent, modelClient); err != nil {
+	if err := s.maybeSummarize(ctx, session, agent); err != nil {
 		return nil, errors.LLMErrWithErr(err, "compress conversation context failed")
 	}
 
@@ -227,22 +212,20 @@ func (s *CommandService) StreamComplete(ctx context.Context, cmd *CompletionComm
 		return nil, err
 	}
 
-	stream, err := modelClient.Stream(ctx, messages, buildModelOptions(agent)...)
-	if err != nil {
-		return nil, errors.LLMErrWithErr(err, "model stream failed")
+	stream, result := s.llmExecutor.Stream(ctx, buildChatRequest(agent, messages))
+	if !result.Success {
+		return nil, errors.LLMErrWithErr(result.Error, "model stream failed")
 	}
-	defer stream.Close()
 
 	var builder strings.Builder
-	for {
-		chunk, err := stream.Recv()
-		if stderrors.Is(err, io.EOF) {
-			break
+	for chunk := range stream {
+		if chunk.Err != nil {
+			if stderrors.Is(chunk.Err, context.Canceled) {
+				return nil, chunk.Err
+			}
+			return nil, errors.LLMErrWithErr(chunk.Err, "read model stream failed")
 		}
-		if err != nil {
-			return nil, errors.LLMErrWithErr(err, "read model stream failed")
-		}
-		if chunk == nil || chunk.Content == "" {
+		if chunk.Done || chunk.Content == "" {
 			continue
 		}
 		builder.WriteString(chunk.Content)
@@ -333,14 +316,14 @@ func (s *CommandService) resolveSessionAndAgent(ctx context.Context, cmd *Comple
 	return session, agent, nil
 }
 
-func (s *CommandService) buildModelMessages(ctx context.Context, session *domain.ChatSession, agent *AgentRuntimeDTO) ([]*schema.Message, error) {
-	result := make([]*schema.Message, 0, s.memoryConfig.CompressionThreshold+2)
+func (s *CommandService) buildModelMessages(ctx context.Context, session *domain.ChatSession, agent *AgentRuntimeDTO) ([]llm.Message, error) {
+	result := make([]llm.Message, 0, s.memoryConfig.CompressionThreshold+2)
 	if strings.TrimSpace(agent.SystemPrompt) != "" {
-		result = append(result, &schema.Message{Role: schema.System, Content: agent.SystemPrompt})
+		result = append(result, llm.Message{Role: "system", Content: agent.SystemPrompt})
 	}
 	if strings.TrimSpace(session.Summary) != "" {
-		result = append(result, &schema.Message{
-			Role:    schema.System,
+		result = append(result, llm.Message{
+			Role:    "system",
 			Content: "Previous conversation summary:\n" + session.Summary,
 		})
 	}
@@ -350,12 +333,12 @@ func (s *CommandService) buildModelMessages(ctx context.Context, session *domain
 		return nil, err
 	}
 	for _, message := range messages {
-		result = append(result, toSchemaMessage(message))
+		result = append(result, toLLMMessage(message))
 	}
 	return result, nil
 }
 
-func (s *CommandService) maybeSummarize(ctx context.Context, session *domain.ChatSession, agent *AgentRuntimeDTO, modelClient model.ChatModel) error {
+func (s *CommandService) maybeSummarize(ctx context.Context, session *domain.ChatSession, agent *AgentRuntimeDTO) error {
 	activeMessages, err := s.messageRepo.FindBySessionIDAfterID(ctx, session.ID, session.SummarizedUntilMessageID, 0)
 	if err != nil {
 		return err
@@ -377,11 +360,11 @@ func (s *CommandService) maybeSummarize(ctx context.Context, session *domain.Cha
 	}
 
 	messagesToCompress := activeMessages[:compressCount]
-	resp, err := modelClient.Generate(ctx, []*schema.Message{
-		{Role: schema.User, Content: buildSummaryPrompt(session.Summary, messagesToCompress)},
-	}, buildModelOptions(agent)...)
-	if err != nil {
-		return err
+	resp, result := s.llmExecutor.Chat(ctx, buildChatRequest(agent, []llm.Message{
+		{Role: "user", Content: buildSummaryPrompt(session.Summary, messagesToCompress)},
+	}))
+	if !result.Success {
+		return result.Error
 	}
 
 	summary := strings.TrimSpace(resp.Content)
@@ -454,33 +437,23 @@ func (s *CommandService) getEnabledAgent(ctx context.Context, id uint64) (*Agent
 	return agent, nil
 }
 
-func toSchemaMessage(message *MessageDTO) *schema.Message {
-	role := schema.User
-	switch domain.MessageRole(message.Role) {
-	case domain.MessageRoleSystem:
-		role = schema.System
-	case domain.MessageRoleAssistant:
-		role = schema.Assistant
-	case domain.MessageRoleTool:
-		role = schema.Tool
-	default:
-		role = schema.User
-	}
-	return &schema.Message{Role: role, Content: message.Content}
+func toLLMMessage(message *MessageDTO) llm.Message {
+	return llm.Message{Role: message.Role, Content: message.Content}
 }
 
-func buildModelOptions(agent *AgentRuntimeDTO) []model.Option {
-	opts := make([]model.Option, 0, 4)
+func buildChatRequest(agent *AgentRuntimeDTO, messages []llm.Message) llm.ChatRequest {
+	req := llm.ChatRequest{
+		ModelConfigID: agent.ModelConfigID,
+		Messages:      messages,
+		MaxTokens:     agent.MaxTokens,
+	}
 	if agent.Temperature > 0 {
-		opts = append(opts, model.WithTemperature(float32(agent.Temperature)))
+		req.Temperature = &agent.Temperature
 	}
 	if agent.TopP > 0 {
-		opts = append(opts, model.WithTopP(float32(agent.TopP)))
+		req.TopP = &agent.TopP
 	}
-	if agent.MaxTokens > 0 {
-		opts = append(opts, model.WithMaxTokens(agent.MaxTokens))
-	}
-	return opts
+	return req
 }
 
 func buildSummaryPrompt(previous string, messages []*domain.ChatMessage) string {

@@ -20,7 +20,7 @@ type AgentPO struct {
 }
 
 func (AgentPO) TableName() string {
-	return "agent"
+	return "agents"
 }
 
 type AgentToolPO struct {

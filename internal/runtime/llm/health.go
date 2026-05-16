@@ -6,14 +6,14 @@ import (
 )
 
 type HealthCheckResult struct {
-	Success      bool
-	ProviderID   uint64
+	Success       bool
+	ProviderID    uint64
 	ModelConfigID uint64
-	LatencyMs    int64
-	HealthStatus string
-	ErrorCode    string
-	ErrorMessage string
-	CheckedAt    time.Time
+	LatencyMs     int64
+	HealthStatus  string
+	ErrorCode     string
+	ErrorMessage  string
+	CheckedAt     time.Time
 }
 
 type HealthChecker interface {

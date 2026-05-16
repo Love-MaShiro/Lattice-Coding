@@ -22,7 +22,7 @@ type AgentRuntimePO struct {
 }
 
 func (AgentRuntimePO) TableName() string {
-	return "agent"
+	return "agents"
 }
 
 type AgentGetter struct {

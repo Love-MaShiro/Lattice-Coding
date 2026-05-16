@@ -9,6 +9,7 @@ import (
 	"lattice-coding/internal/modules/chat/application"
 	"lattice-coding/internal/modules/chat/domain"
 	"lattice-coding/internal/modules/chat/infra/persistence"
+	"lattice-coding/internal/runtime/llm"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -17,7 +18,7 @@ import (
 type ModuleProvider struct {
 	DB           *gorm.DB
 	Redis        *redis.Client
-	ModelFactory application.ChatModelFactory
+	LLMExecutor  *llm.Executor
 	MemoryConfig config.ChatMemoryConfig
 }
 
@@ -40,7 +41,7 @@ func NewModule(p *ModuleProvider) *Module {
 		sessionRepo,
 		messageRepo,
 		agentGetter,
-		p.ModelFactory,
+		p.LLMExecutor,
 		p.Redis,
 		memoryConfigFromConfig(p.MemoryConfig),
 	)

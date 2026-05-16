@@ -14,9 +14,10 @@ import (
 )
 
 type Bootstrap struct {
-	Deps    *Dependencies
-	Modules *Modules
-	Engine  *gin.Engine
+	Deps      *Dependencies
+	Container *Container
+	Modules   *Modules
+	Engine    *gin.Engine
 }
 
 func NewHTTPBootstrap() (*Bootstrap, error) {
@@ -41,9 +42,10 @@ func NewHTTPBootstrap() (*Bootstrap, error) {
 	modules.RegisterRoutes(api)
 
 	return &Bootstrap{
-		Deps:    deps,
-		Modules: modules,
-		Engine:  engine,
+		Deps:      deps,
+		Container: NewContainer(deps),
+		Modules:   modules,
+		Engine:    engine,
 	}, nil
 }
 
@@ -66,8 +68,9 @@ func NewWorkerBootstrap() (*Bootstrap, error) {
 	modules := InitModules(deps)
 
 	return &Bootstrap{
-		Deps:    deps,
-		Modules: modules,
+		Deps:      deps,
+		Container: NewContainer(deps),
+		Modules:   modules,
 	}, nil
 }
 
